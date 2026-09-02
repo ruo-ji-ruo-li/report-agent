@@ -7,7 +7,8 @@
 - compare_stage: sex/age 缺失抛 ValueError 引导补录;payload n_abnormal/critical_count/matched_patterns
 - retrieve_stage: 逐异常项并发检索;空结果 → placeholder 证据;Evidence 8 键 JSON 化
 - generate_stage: 逐项解读(LLM 失败回退模板)+ 总评 + 四段式 doc;整体不因 LLM 失败而抛
-- plan_stage: 复查计划落库;LLM 润色失败 → degraded 合并进解读 doc;组合模式条目以模式名产出
+- plan_stage: 复查计划落库;解读行 degraded 只随 guardrail 标志(与 plan.degraded 无关);
+  复查单自身模板降级留在 followup_plans.degraded;全正常报告不降级
 """
 import asyncio
 from types import SimpleNamespace
@@ -455,7 +456,8 @@ def test_generate_stage_llm_error_uses_fallbacks_no_raise():
     assert doc["degraded"] is False  # generate 内部降级不置 doc.degraded(guardrail 管)
 
 
-def test_plan_stage_persists_and_merges_degraded():
+def test_plan_stage_followup_template_degraded_stays_on_followup_row():
+    """LLM 润色失败 → 复查单 degraded=True 落 followup 行;解读行不并入该标志。"""
     judgments = [
         _jdict(status="critical_high", value_num=25, critical=True),
         _jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80),
@@ -470,16 +472,17 @@ def test_plan_stage_persists_and_merges_degraded():
                        checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
                        deps=deps)
     payload = asyncio.run(plan_stage(ctx))
-    assert payload == {"n_items": 3, "degraded": True}
+    assert payload == {"n_items": 3, "degraded": True}  # payload 反映复查单自身降级
     items = db.saved_followup["items"]
     assert items[0]["timeframe"] == "立即"  # 危急置顶
     assert items[2]["item"] == "组合模式复查:代谢异常模式"  # 模式条目以名称为载体
     assert "丙氨酸氨基转移酶" in items[2]["basis"]
     assert db.saved_followup["degraded"] is True
-    assert db.saved_interpretation["degraded"] is True  # plan.degraded 并入解读 doc
+    # 无 guardrail checkpoint → 解读行 degraded=False(plan.degraded 不再并入)
+    assert db.saved_interpretation["degraded"] is False
 
 
-def test_plan_stage_persists_non_degraded_with_guardrail_off():
+def test_plan_stage_smooth_ok_persists_plain_doc():
     judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
     compare = _compare_checkpoint(judgments)
     doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
@@ -493,4 +496,44 @@ def test_plan_stage_persists_non_degraded_with_guardrail_off():
     payload = asyncio.run(plan_stage(ctx))
     assert payload == {"n_items": 1, "degraded": False}
     assert db.saved_followup["items"][0]["basis"] == "转氨酶升高,建议择期复查肝功能"
+    assert db.saved_followup["degraded"] is False
+    assert db.saved_interpretation["degraded"] is False
+
+
+def test_plan_stage_interpretation_degraded_only_from_guardrail():
+    """guardrail degraded=True → 解读行 True;复查单润色成功(followup 行仍 False)。"""
+    judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
+    compare = _compare_checkpoint(judgments)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(json_result={"0": "转氨酶升高,建议择期复查肝功能"})  # 润色成功
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc},
+                                    "guardrail": {"degraded": True}}, db=db, deps=deps)
+    payload = asyncio.run(plan_stage(ctx))
+    assert payload == {"n_items": 1, "degraded": False}
+    assert db.saved_followup["degraded"] is False
+    assert db.saved_interpretation["degraded"] is True  # 只随 guardrail 标志
+
+
+def test_plan_stage_all_normal_report_not_degraded():
+    """全正常报告(仅 normal/unknown 项)→ 空复查单,解读/复查两行均不降级。"""
+    judgments = [
+        _jdict(code="WBC", name="白细胞", status="normal", value_num=5.2),
+        _jdict(code="XX", name="未知项", status="unknown", value_num=None),
+    ]
+    compare = _compare_checkpoint(judgments)
+    doc = {"summary": "一切正常", "items": [], "advice_summary": "", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(error=True)  # 空复查单不调 LLM,即便挂了也不影响
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
+                       deps=deps)
+    payload = asyncio.run(plan_stage(ctx))
+    assert payload == {"n_items": 0, "degraded": False}
+    assert db.saved_followup == {"items": [], "degraded": False}
     assert db.saved_interpretation["degraded"] is False

@@ -70,6 +70,13 @@ def test_interpret_item_llm_failure_falls_back_to_template():
     assert out.meaning != ""
 
 
+def test_interpret_item_non_dict_json_falls_back_to_template():
+    """合法 JSON 但非 dict(如 [])→ 视同 LLM 失败走模板解读,不得冒泡 AttributeError。"""
+    out = asyncio.run(interpret_item(_judgment(), _ctx(), [], FakeLLM(result=[])))
+    assert "线下咨询" in out.advice
+    assert out.meaning != ""
+
+
 def test_summary_llm_failure_uses_template():
     assert "2 项异常" in template_summary(2, 1, ["代谢综合征倾向"], 0)
     assert "危急" in template_summary(2, 1, [], 0)

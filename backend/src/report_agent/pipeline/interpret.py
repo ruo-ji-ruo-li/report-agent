@@ -80,6 +80,11 @@ async def interpret_item(
     )}]
     try:
         data = await llm.complete_json(messages)
+        if not isinstance(data, dict):
+            # 合法 JSON 但非 dict(数组/字符串)→ 视同 LLM 失败走模板,不得冒泡
+            # (对齐 Task 6 先例 7e1bf73)—— 评审裁决 Important-2
+            log.warning("interpret_item_llm_bad_shape", name=j.name, shape=type(data).__name__)
+            return _fallback_interpretation(j)
         return ItemInterpretation(
             indicator_code=j.indicator_code, name=j.name, status=j.status.value,
             value_text=_value_text(j), meaning=data.get("meaning", ""),

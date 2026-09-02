@@ -211,7 +211,9 @@ async def plan_stage(ctx: StageContext) -> dict:
     plan = await build_followup_plan(judgments, matched, ctx_by_code, ctx.deps.llms.chat)
 
     doc = ctx.checkpoints.get("generate", {}).get("doc", {})
-    degraded = bool(ctx.checkpoints.get("guardrail", {}).get("degraded", False)) or plan.degraded
+    # 解读行 degraded 只取护栏内容安全降级语义(spec §5.5);复查单自身模板降级
+    # (plan.degraded)只留在 followup_plans.degraded 列 —— 评审裁决 Important-1(b)
+    degraded = bool(ctx.checkpoints.get("guardrail", {}).get("degraded", False))
     await ctx.db.save_interpretation(ctx.report["id"], ctx.task_id, {**doc, "degraded": degraded})
     await ctx.db.save_followup(
         ctx.report["id"], ctx.task_id,

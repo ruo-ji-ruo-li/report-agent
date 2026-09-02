@@ -84,7 +84,20 @@ def test_build_followup_plan_smooth_ok_not_degraded():
 
 
 def test_build_followup_plan_empty_no_items_no_llm_calls():
-    """无异常项 → 空复查单;items 为空时不再调 LLM。"""
-    doc = asyncio.run(build_followup_plan([], [], {}, FakeLLM(result=None)))
+    """无异常项 → 空复查单且不降级(无事可润色 ≠ 降级,评审裁决 Important-1);不调 LLM。"""
+    llm = FakeLLM(result=None)
+    doc = asyncio.run(build_followup_plan([], [], {}, llm))
     assert isinstance(doc, FollowupPlanDoc)
     assert doc.items == []
+    assert doc.degraded is False
+    assert llm.calls == []
+
+
+def test_build_followup_plan_all_normal_judgments_not_degraded():
+    """全正常报告(仅 normal/unknown 项,LLM 挂)→ 仍为空复查单且 degraded=False。"""
+    jn = _judgment(status=ItemStatus.NORMAL, value_num=5.0)
+    ju = _judgment(status=ItemStatus.UNKNOWN, value_num=None)
+    ctx = IndicatorContext(code="GLU", name="空腹血糖")
+    doc = asyncio.run(build_followup_plan([jn, ju], [], {"GLU": ctx}, FakeLLM(error=True)))
+    assert doc.items == []
+    assert doc.degraded is False

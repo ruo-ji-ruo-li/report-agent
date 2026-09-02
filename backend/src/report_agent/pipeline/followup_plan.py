@@ -99,4 +99,5 @@ async def build_followup_plan(judgments, matched_patterns, ctx_by_code, llm) -> 
     except Exception as e:  # noqa: BLE001
         log.warning("followup_plan_error", error=str(e))
         smoothed = None
-    return FollowupPlanDoc(items=smoothed or items, degraded=smoothed is None)
+    # 空复查单(全正常报告)无事可润色,不视为降级 —— 评审裁决 Important-1(a)
+    return FollowupPlanDoc(items=smoothed or items, degraded=smoothed is None and len(items) > 0)
