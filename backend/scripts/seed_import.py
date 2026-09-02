@@ -23,8 +23,16 @@ def upsert_indicator(session, seed) -> None:
         code=seed.code, name=seed.name, aliases=seed.aliases, unit=seed.unit,
         conv=seed.unit_conversions, category=seed.category, description=seed.description,
     )
+    # 出边收敛(I1):种子 YAML 删除/改名某项后重跑本实体,旧提示/簇/建议边全部移除再重建。
+    # 只删 Indicator 的出边;Condition/Cluster/Intervention/Department 是共享节点,不删。
     session.run(
-        "MATCH (i:Indicator {code: $code})-[r:HAS_RANGE]->(:RangeSpec) DELETE r", code=seed.code
+        "MATCH (i:Indicator {code: $code})"
+        "-[r:HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION]->() DELETE r",
+        code=seed.code,
+    )
+    session.run(
+        "MATCH (i:Indicator {code: $code})-[r:HAS_RANGE]->(rs:RangeSpec) DETACH DELETE rs",
+        code=seed.code,
     )
     for r in seed.ranges:
         session.run(
@@ -64,6 +72,11 @@ def upsert_indicator(session, seed) -> None:
             )
     if seed.departments:
         _attach_departments(session, seed)
+    # 孤儿清扫(I1):重跑后无主节点全局清扫(实体级重建已防新孤儿,此处兜底历史遗留)。
+    # RangeSpec 无出边,plain DELETE 足够;Intervention 可带 REFER_TO 出边,
+    # 必须 DETACH(plain DELETE 会在节点仍有关系时报错)。
+    session.run("MATCH (rs:RangeSpec) WHERE NOT (rs)<--() DELETE rs")
+    session.run("MATCH (iv:Intervention) WHERE NOT (iv)<--() DETACH DELETE iv")
 
 
 def _attach_departments(session, seed) -> None:
