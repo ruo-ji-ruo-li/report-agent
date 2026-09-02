@@ -5076,7 +5076,7 @@ async def generate_stage(ctx: StageContext) -> dict:
         interpret_item,
         build_advice_summary,
     )
-    from report_agent.pipeline.rule_compare import ItemStatus
+    from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
     from report_agent.retrieval.hybrid import Evidence
 
     judgments = ctx.checkpoints.get("compare", {}).get("judgments", [])
@@ -5093,8 +5093,7 @@ async def generate_stage(ctx: StageContext) -> dict:
         kctx = None
         if j["indicator_code"]:
             kctx = ctx.deps.kg.indicator_context(j["indicator_code"])
-        item_judgment = __import__("report_agent.pipeline.rule_compare",
-                                   fromlist=["ItemJudgment"]).ItemJudgment(
+        item_judgment = ItemJudgment(
             indicator_code=j["indicator_code"], name=j["name"], value_num=j["value_num"],
             value_text=j["value_text"], unit=j["unit"], status=ItemStatus(j["status"]),
             ref_low=j["ref_low"], ref_high=j["ref_high"], critical=j["critical"],
@@ -5722,10 +5721,13 @@ def test_create_manual_report_and_run_task():
     body = resp.json()
     assert body["report_id"] == "r1" and body["task_id"] == "task-1"
     assert app.state.db_access.items[0].name == "空腹血糖"
-    # 后台任务被触发(异步)
-    import asyncio
+    # 后台任务异步调度:轮询等待(create_task 在 portal 事件循环里执行,不能同步断言)
+    import time
 
-    assert app.state.runner.ran == ["task-1"]  # create_task 立即调度,单测环境同步完成
+    deadline = time.time() + 3
+    while not app.state.runner.ran and time.time() < deadline:
+        time.sleep(0.02)
+    assert app.state.runner.ran == ["task-1"]
 
 
 def test_patch_meta_resumes_awaiting_task():
@@ -5733,6 +5735,11 @@ def test_patch_meta_resumes_awaiting_task():
     resp = client.patch("/api/reports/r1/meta", json={"sex": "female", "age": 30})
     assert resp.status_code == 200
     assert app.state.db_access.report["sex"] == "female"
+    import time
+
+    deadline = time.time() + 3
+    while not app.state.runner.ran and time.time() < deadline:
+        time.sleep(0.02)
     assert app.state.runner.ran == ["task-1"]  # 补录后重新入队
 
 
@@ -6545,12 +6552,87 @@ db_access.py 追加:
             ]
 ```
 
-- [ ] **Step 8: 运行测试确认通过**
+- [ ] **Step 8: 写 chat API 测试(app.state 注入 fake)**
+
+```python
+from fastapi.testclient import TestClient
+
+from report_agent.api.app import create_app
+
+
+class FakeDBA:
+    def __init__(self):
+        self.sessions = {"s1": {"id": "s1", "report_id": "r1"}}
+        self.messages = []
+
+    async def get_report_detail(self, report_id):
+        return {"meta": {"sex": "male", "age": 40}, "items": [], "normalized": []}
+
+    async def create_session(self, report_id):
+        sid = "s1"
+        self.sessions[sid] = {"id": sid, "report_id": report_id}
+        return sid
+
+    async def get_session(self, session_id):
+        return self.sessions.get(session_id)
+
+    async def get_messages(self, session_id):
+        return [m for m in self.messages if m["session_id"] == session_id]
+
+    async def add_message(self, session_id, role, content, tool_calls=None,
+                          evidence_ids=None, guardrail_flags=None):
+        self.messages.append({"session_id": session_id, "role": role, "content": content})
+
+
+class FakeLLMs:
+    class _Chat:
+        @property
+        def chat(self):
+            return self
+
+        async def complete_json(self, messages, retry_feedback=True):
+            return {"passed": True, "issues": []}
+
+    async def get(self):
+        return type("LLMClients", (), {"chat": FakeLLMs._Chat()})()
+
+
+def _client():
+    app = create_app(deps_builder=lambda settings: object())
+    app.state.db_access = FakeDBA()
+    app.state.deps = type("D", (), {
+        "db": app.state.db_access,
+        "settings": type("S", (), {"chat_model": "x", "deepseek_base_url": "http://x",
+                                   "deepseek_api_key": "", "agent_max_tool_rounds": 8})(),
+    })()
+    return TestClient(app), app
+
+
+def test_create_chat_session():
+    client, app = _client()
+    resp = client.post("/api/reports/r1/chat/sessions")
+    assert resp.status_code == 200
+    assert resp.json()["session_id"] == "s1"
+
+
+def test_chat_session_not_found():
+    client, _ = _client()
+    assert client.post("/api/chat/sessions/nope/messages",
+                       json={"content": "hi"}).status_code == 404
+
+
+def test_history_empty_and_saved():
+    client, app = _client()
+    assert client.get("/api/chat/sessions/s1/history").json() == {"messages": []}
+    assert app.state.db_access.messages == []
+```
+
+- [ ] **Step 9: 运行全部测试确认通过**
 
 Run: `cd /d/DeskTop/agent/report-agent/backend && uv run pytest tests/unit_chat tests/unit_api/test_chat_api.py -v`
-Expected: PASS
+Expected: PASS(注意 test_chat_session_not_found 走 404 分支,不触发 LLM;POST messages 的 SSE 路径依赖真模型,单元测试不覆盖——smoke 覆盖)
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 10: 提交**
 
 ```bash
 cd /d/DeskTop/agent/report-agent
@@ -6865,6 +6947,7 @@ async def main() -> None:
     from report_agent.pipeline.interpret import generate_summary, interpret_item
     from report_agent.retrieval.hybrid import RetrievalQuery
 
+    numeric_ok, numeric_total = 0, 0
     for path in report_files[:args.max_llm_reports]:
         data = json.loads(path.read_text("utf-8"))
         allowed = [r["value_num"] for r in data["raw_items"] if r.get("value_num") is not None]
@@ -6885,8 +6968,6 @@ async def main() -> None:
                 specs[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
         judgments = judge_all(gt_items, specs, ReportMeta(sex=data["meta"]["sex"],
                                                           age=data["meta"]["age"]))
-        numeric_ok = 0
-        numeric_total = 0
         for j in judgments:
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
@@ -6908,7 +6989,7 @@ async def main() -> None:
             numeric_ok += 1
         else:
             metrics["safety_violations"] += 1
-        metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
+    metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
     # 5) 拒答 QA(30 条,需要 eval/fixtures 报告已入库:先跑一次 smoke.py 或手工上传样例)
     from report_agent.chat.agent import build_chat_agent
@@ -6976,8 +7057,12 @@ import asyncio
 import json
 import sys
 import time
+from pathlib import Path
 
 import httpx
+
+# scripts/ 非安装包:把 backend 根加进 sys.path,使其中的兄弟脚本可导入
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 BASE = "http://localhost:8000"
 
