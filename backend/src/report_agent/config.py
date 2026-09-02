@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     unstructured_infer_table: bool = True
     parse_min_items: int = 3
 
+    # 上传
+    upload_dir: str = "./uploads"
+
     # LangSmith(可选)
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""

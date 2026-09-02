@@ -122,3 +122,91 @@ class DataAccess:
                 degraded=doc.get("degraded", False),
             ))
             await s.commit()
+
+    # ===== API 层使用 =====
+    async def create_report(self, source: str, file_path: str | None, meta: ReportMeta) -> str:
+        from report_agent.db.models import Report
+
+        async with self._factory() as s:
+            row = Report(source=source, file_path=file_path, institution=meta.institution,
+                         report_date=meta.report_date, sex=meta.sex, age=meta.age)
+            s.add(row)
+            await s.commit()
+            await s.refresh(row)
+            return row.id
+
+    async def get_report_detail(self, report_id: str) -> dict | None:
+        from sqlalchemy import select
+
+        async with self._factory() as s:
+            row = await s.get(Report, report_id)
+            if row is None:
+                return None
+            raws = (await s.execute(
+                select(RawItem).where(RawItem.report_id == report_id).order_by(RawItem.id)
+            )).scalars().all()
+            norms = (await s.execute(
+                select(NormalizedItemRow).where(NormalizedItemRow.report_id == report_id)
+                .order_by(NormalizedItemRow.id)
+            )).scalars().all()
+            return {
+                "meta": {"id": row.id, "source": row.source, "institution": row.institution,
+                         "report_date": row.report_date, "sex": row.sex, "age": row.age},
+                "items": [
+                    {"section": r.section, "name": r.item_name, "value_text": r.value_text,
+                     "value_num": r.value_num, "unit": r.unit, "ref_range_text": r.ref_range_text,
+                     "abnormal_flag": r.abnormal_flag}
+                    for r in raws
+                ],
+                "normalized": [
+                    {"item_name": n.item_name, "indicator_code": n.indicator_code,
+                     "value_num": n.value_num, "unit": n.unit, "status": n.status,
+                     "ref_low": n.ref_low, "ref_high": n.ref_high, "critical": n.critical}
+                    for n in norms
+                ],
+            }
+
+    async def get_task_for_report(self, report_id: str) -> dict | None:
+        from sqlalchemy import select
+
+        from report_agent.db.models import InterpretationTask
+
+        async with self._factory() as s:
+            row = (await s.execute(
+                select(InterpretationTask).where(InterpretationTask.report_id == report_id)
+                .order_by(InterpretationTask.created_at.desc()).limit(1)
+            )).scalars().first()
+            if row is None:
+                return None
+            return {"id": row.id, "status": row.status, "stage": row.stage,
+                    "error": row.error}
+
+    async def get_interpretation(self, report_id: str) -> dict | None:
+        from sqlalchemy import select
+
+        from report_agent.db.models import InterpretationRow
+
+        async with self._factory() as s:
+            row = (await s.execute(
+                select(InterpretationRow).where(InterpretationRow.report_id == report_id)
+                .order_by(InterpretationRow.created_at.desc()).limit(1)
+            )).scalars().first()
+            if row is None:
+                return None
+            return {"summary": row.summary, "items": row.items,
+                    "advice_summary": row.advice_summary, "disclaimer": row.disclaimer,
+                    "degraded": row.degraded}
+
+    async def get_followup(self, report_id: str) -> dict | None:
+        from sqlalchemy import select
+
+        from report_agent.db.models import FollowupPlanRow
+
+        async with self._factory() as s:
+            row = (await s.execute(
+                select(FollowupPlanRow).where(FollowupPlanRow.report_id == report_id)
+                .order_by(FollowupPlanRow.created_at.desc()).limit(1)
+            )).scalars().first()
+            if row is None:
+                return None
+            return {"items": row.items, "degraded": row.degraded}
