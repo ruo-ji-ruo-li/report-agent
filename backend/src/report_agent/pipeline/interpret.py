@@ -59,7 +59,8 @@ def _fallback_interpretation(j: ItemJudgment) -> ItemInterpretation:
 
 
 async def interpret_item(
-    j: ItemJudgment, ctx: IndicatorContext | None, evidence: list[Evidence], llm
+    j: ItemJudgment, ctx: IndicatorContext | None, evidence: list[Evidence], llm,
+    feedback: str | None = None,
 ) -> ItemInterpretation:
     if llm is None:
         return _fallback_interpretation(j)
@@ -74,10 +75,14 @@ async def interpret_item(
             f"降低提示 {[f'{c.name}({c.strength})' for c in ctx.low_suggests]}; "
             f"建议 {[f'{i.level}:{i.text}' for i in ctx.interventions]}; 科室 {ctx.departments}"
         )
-    messages = [{"role": "user", "content": prompt.format(
+    content = prompt.format(
         name=j.name, status=_status_cn(j.status), value=_value_text(j),
         kg_facts=kg_facts, evidence=ev_block,
-    )}]
+    )
+    if feedback:
+        # 护栏重生成注入上次未过审原因(spec §5.5 带问题反馈重生成;评审 I-2④)
+        content += f"\n\n上次护栏未过审原因(本次必须修复):\n{feedback}"
+    messages = [{"role": "user", "content": content}]
     try:
         data = await llm.complete_json(messages)
         if not isinstance(data, dict):
@@ -112,7 +117,7 @@ def template_summary(n_abnormal: int, critical_count: int, matched_patterns: lis
 
 
 async def generate_summary(items: list[ItemInterpretation], matched_patterns: list[str],
-                           unknown_count: int, llm) -> str:
+                           unknown_count: int, llm, feedback: str | None = None) -> str:
     n_abnormal = len(items)
     critical = sum(1 for i in items if i.status.startswith("critical"))
     try:
@@ -121,10 +126,14 @@ async def generate_summary(items: list[ItemInterpretation], matched_patterns: li
             f"- {i.name}: {_value_text_from_item(i)}, 建议级别 {i.advice_level}"
             for i in items
         )
-        messages = [{"role": "user", "content": prompt.format(
+        content = prompt.format(
             items=items_block, matched_patterns="、".join(matched_patterns) or "无",
             unknown_count=unknown_count,
-        )}]
+        )
+        if feedback:
+            # 护栏重生成注入上次未过审原因(spec §5.5;评审 I-2④)
+            content += f"\n\n上次护栏未过审原因(本次必须修复):\n{feedback}"
+        messages = [{"role": "user", "content": content}]
         return (await llm.chat(messages, temperature=0.1)).strip()
     except LLMError:
         log.warning("summary_llm_failed_using_template")

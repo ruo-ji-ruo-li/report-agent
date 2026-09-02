@@ -1,20 +1,24 @@
-"""parse/normalize/compare/retrieve/generate/plan 六阶段单测:FakeDB/FakeKG/FakeNormalizer,
-零 DB/零网络。retrieve/generate/plan 由 Task 12 追加注册。
+"""parse/normalize/compare/retrieve/generate/guardrail/plan 七阶段单测:FakeDB/FakeKG/
+FakeNormalizer,零 DB/零网络。retrieve/generate/plan 由 Task 12 追加注册,
+guardrail 由 Task 13 注册(阶段级测试在 Task 13 评审修复轮补齐)。
 
-锁定语义(brief):
+锁定语义(brief + 评审裁决):
 - parse_stage: manual 直通校验;非 manual needs_meta=sex/age 缺失 → 暂停信号;不支持来源 ValueError
 - normalize_stage: 换算后标准值入库但 raw 原值(raw_value_num/raw_unit)不丢
 - compare_stage: sex/age 缺失抛 ValueError 引导补录;payload n_abnormal/critical_count/matched_patterns
 - retrieve_stage: 逐异常项并发检索;空结果 → placeholder 证据;Evidence 8 键 JSON 化
 - generate_stage: 逐项解读(LLM 失败回退模板)+ 总评 + 四段式 doc;整体不因 LLM 失败而抛
-- plan_stage: 复查计划落库;解读行 degraded 只随 guardrail 标志(与 plan.degraded 无关);
-  复查单自身模板降级留在 followup_plans.degraded;全正常报告不降级
+- guardrail_stage: 深拷贝 generate doc 只读;总评/逐项过 enforce;guardrail doc 为落库权威源
+- plan_stage: 复查计划落库;解读行 doc 以 guardrail checkpoint 为源(generate 兜底),
+  degraded 只随 guardrail 标志(与 plan.degraded 无关);复查单自身模板降级留在
+  followup_plans.degraded;全正常报告不降级
 """
 import asyncio
 from types import SimpleNamespace
 
 import pytest
 
+from report_agent.guardrails.rules import GuardrailContext, Verdict, rule_guardrail
 from report_agent.knowledge.kg_client import (
     IndicatorContext,
     PatternCriterion,
@@ -29,6 +33,7 @@ from report_agent.pipeline.stages import (
     StageContext,
     compare_stage,
     generate_stage,
+    guardrail_stage,
     normalize_stage,
     parse_stage,
     plan_stage,
@@ -537,3 +542,189 @@ def test_plan_stage_all_normal_report_not_degraded():
     assert payload == {"n_items": 0, "degraded": False}
     assert db.saved_followup == {"items": [], "degraded": False}
     assert db.saved_interpretation["degraded"] is False
+
+
+# ---------------- guardrail 阶段 / plan 落库权威源(Task 13 评审修复轮)----------------
+
+class FakeAuditSession:
+    def __init__(self):
+        self.added = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+class FakeAuditFactory:
+    def __init__(self):
+        self.sessions = []
+
+    def __call__(self):
+        s = FakeAuditSession()
+        self.sessions.append(s)
+        return s
+
+    @property
+    def events(self) -> list:
+        return [e for s in self.sessions for e in s.added]
+
+
+def _gdoc(summary: str, items: list[dict]) -> dict:
+    return {"summary": summary, "items": items, "advice_summary": "a",
+            "disclaimer": "【免责声明】本解读不构成医学诊断。", "degraded": False}
+
+
+def _gitem(code: str, name: str, meaning: str, advice: str, status: str = "high") -> dict:
+    return {"indicator_code": code, "name": name, "status": status,
+            "value_text": "25 mmol/L(参考区间 3.9~6.1)", "meaning": meaning,
+            "risks": [], "advice_level": "recheck", "advice": advice, "evidence_ids": []}
+
+
+def _gctx(**kw) -> GuardrailContext:
+    base = {"allowed_numbers": [25.0, 7.2, 3.9, 6.1, 40.0], "require_disclaimer": False,
+            "require_critical_warning": False}
+    base.update(kw)
+    return GuardrailContext(**base)
+
+
+def test_guardrail_stage_pass_through_no_llm_no_audit():
+    """全 PASS 直通:doc 内容与 generate 一致,零 LLM 调用、零审计事件。"""
+    judgments = [_jdict()]
+    compare = _compare_checkpoint(judgments)
+    items = [_gitem("GLU", "空腹血糖", "空腹血糖 7.2,高于上限 6.1,建议关注。",
+                    "建议复查空腹血糖。")]
+    doc = _gdoc("本次体检空腹血糖 7.2,高于上限 6.1,建议复查。", items)
+    llm = FakeLLM()
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is False
+    assert payload["doc"]["summary"] == doc["summary"]
+    assert payload["doc"]["items"] == doc["items"]
+    assert payload["findings"] == [{"part": "summary", "degraded": False},
+                                   {"part": "空腹血糖", "degraded": False}]
+    assert llm.calls == [] and factory.sessions == []
+
+
+def test_guardrail_stage_summary_suspect_review_fail_regen_passes_with_feedback():
+    """总评 SUSPECT(越界数值)→ 审核失败 → 重生成注入 feedback 通过 → 不降级。"""
+    judgments = [_jdict()]
+    compare = _compare_checkpoint(judgments)
+    doc = _gdoc("血糖 9.9 mmol/L,高于上限,请结合临床随访。", [])
+    llm = FakeLLM(json_result={"passed": False, "issues": ["数值与报告不一致"]},
+                  text_result="总体结论:血糖升高,建议定期复查并随访。")
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is False
+    assert payload["doc"]["summary"] == "总体结论:血糖升高,建议定期复查并随访。"
+    # generate checkpoint 只读:总评改写不回流(评审 Critical-1b)
+    assert ctx.checkpoints["generate"]["doc"]["summary"] == "血糖 9.9 mmol/L,高于上限,请结合临床随访。"
+    assert [e.event_type for e in factory.events] == ["guardrail_suspect", "review_failed"]
+    # 审计事件带 report/task 关联 id(评审 I-3)
+    assert factory.events[0].report_id == "r1" and factory.events[0].task_id == "t1"
+    # feedback(未过审原因)注入总评重生成消息(评审 I-2④)
+    chat_contents = [m[0]["content"] for kind, m in llm.calls if kind == "chat"]
+    assert any("上次护栏未过审原因" in c and "越界数值: 9.9" in c for c in chat_contents)
+
+
+def test_guardrail_stage_critical_item_advice_violation_degrades_clears_advice():
+    """违规在 advice → 重生成仍违规 → 降级:meaning 换危急降级文本(含"尽快就医"词元)、
+    advice 清空;降级项复合文本在项级 ctx(危急强提醒)复检 PASS。评审 I-1/②③ 回归。"""
+    judgments = [_jdict(status="critical_high", value_num=25, critical=True)]
+    compare = _compare_checkpoint(judgments)
+    items = [_gitem("GLU", "空腹血糖", "血糖 25,显著升高,已达危急值水平。",
+                    "建议每日服用二甲双胍 500mg 控制血糖。", status="critical_high")]
+    doc = _gdoc("本次体检空腹血糖 25,达危急值,请尽快就医复查。", items)
+    llm = FakeLLM(json_result={"meaning": "血糖偏高。", "risks": [],
+                               "advice_level": "urgent", "advice": "继续服用二甲双胍 500mg。",
+                               "evidence_ids": []})
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is True
+    assert payload["doc"]["advice_summary"] == "所有异常项请以线下医师意见为准。"
+    item = payload["doc"]["items"][0]
+    assert item["advice"] == ""  # 降级写回清空 advice,不留违规原文(评审 I-1)
+    assert item["meaning"] == "空腹血糖达危急值水平,请尽快就医,具体请以线下医师意见为准。"
+    # generate checkpoint 只读:item dict 不被原地改写(评审 Critical-1b)
+    gen_item = ctx.checkpoints["generate"]["doc"]["items"][0]
+    assert gen_item["meaning"] == "血糖 25,显著升高,已达危急值水平。"
+    assert gen_item["advice"] == "建议每日服用二甲双胍 500mg 控制血糖。"
+    assert [e.event_type for e in factory.events] == ["guardrail_block", "degraded_output"]
+    # 回归:降级项 meaning+advice 复合文本在项级 ctx(危急强提醒)下必须 PASS
+    r = rule_guardrail(f"{item['meaning']}\n建议:{item['advice']}",
+                       _gctx(require_critical_warning=True))
+    assert r.verdict == Verdict.PASS
+
+
+def test_guardrail_stage_item_block_regen_pass_writes_back():
+    """项 BLOCK(诊断用语在 advice)→ 重生成注入 feedback 通过 → meaning/advice 双双写回。"""
+    judgments = [_jdict()]
+    compare = _compare_checkpoint(judgments)
+    items = [_gitem("GLU", "空腹血糖", "血糖 7.2,偏高,建议关注。",
+                    "您患有糖尿病,建议用药治疗。")]
+    doc = _gdoc("本次体检空腹血糖 7.2,高于上限 6.1,建议复查。", items)
+    llm = FakeLLM(json_result={"meaning": "血糖偏高,建议饮食控制。", "risks": [],
+                               "advice_level": "recheck", "advice": "建议复查空腹血糖。",
+                               "evidence_ids": []})
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is False
+    item = payload["doc"]["items"][0]
+    assert item["meaning"] == "血糖偏高,建议饮食控制。"
+    assert item["advice"] == "建议复查空腹血糖。"
+    assert [e.event_type for e in factory.events] == ["guardrail_block"]
+    json_contents = [m[0]["content"] for kind, m in llm.calls if kind == "json"]
+    assert any("上次护栏未过审原因" in c and "诊断用语" in c for c in json_contents)
+
+
+def test_plan_stage_interpretation_doc_guardrail_authoritative_generate_fallback():
+    """解读行 doc:guardrail checkpoint 存在则以其为权威源(含降级 summary);否则退回 generate。"""
+    judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
+    compare = _compare_checkpoint(judgments)
+    llm = FakeLLM(json_result={"0": "转氨酶升高,建议择期复查肝功能"})
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    gen_doc = {"summary": "generate 原文总评", "items": [], "advice_summary": "a0",
+               "disclaimer": "d0", "degraded": False}
+    gr_doc = {"summary": "降级版:仅数值对照。", "items": [], "advice_summary": "a1",
+              "disclaimer": "d0", "degraded": True}
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": gen_doc},
+                                    "guardrail": {"doc": gr_doc, "degraded": True,
+                                                  "findings": []}},
+                       db=db, deps=deps)
+    asyncio.run(plan_stage(ctx))
+    assert db.saved_interpretation["summary"] == "降级版:仅数值对照。"  # guardrail 权威
+    assert db.saved_interpretation["advice_summary"] == "a1"
+    assert db.saved_interpretation["degraded"] is True
+
+    db2 = FakeDB()
+    ctx2 = StageContext(task_id="t1", report={"id": "r1"},
+                        checkpoints={"compare": compare, "generate": {"doc": gen_doc}},
+                        db=db2, deps=deps)
+    asyncio.run(plan_stage(ctx2))
+    assert db2.saved_interpretation["summary"] == "generate 原文总评"  # 无 guardrail → 兜底
+    assert db2.saved_interpretation["degraded"] is False

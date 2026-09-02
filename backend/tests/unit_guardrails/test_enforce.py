@@ -105,6 +105,7 @@ def test_enforce_block_regen_then_degrade_and_suspect_regen_recovery():
     text, degraded = asyncio.run(go_block())
     assert degraded and text.startswith("降级版")
     assert len(calls) == 1  # 只重生成一次
+    assert calls[0] == ["诊断用语: 确诊"]  # block 路径 feedback = 规则 findings 全量
     assert "guardrail_block" in audit.events and "degraded_output" in audit.events
     assert "review_failed" not in audit.events  # block 路径不触发二次 LLM 审核
 
@@ -124,5 +125,48 @@ def test_enforce_block_regen_then_degrade_and_suspect_regen_recovery():
     text2, degraded2 = asyncio.run(go_suspect())
     assert not degraded2 and "定期监测" in text2 and "9.9" not in text2
     assert len(regen_calls) == 1  # 只重生成一次
+    # suspect 审核失败 → feedback = findings + review issues 全量注入(评审 Minor-2)
+    assert regen_calls[0] == ["越界数值: 9.9", "语义越界"]
     assert "guardrail_suspect" in audit2.events and "review_failed" in audit2.events
     assert "degraded_output" not in audit2.events
+
+
+class _SeqReviewLLM:
+    """complete_json 依序返回 results,超出取最后一个(单测 review1/review2 分歧)。"""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = 0
+
+    async def complete_json(self, messages, retry_feedback=True):
+        r = self.results[min(self.calls, len(self.results) - 1)]
+        self.calls += 1
+        return r
+
+
+def test_enforce_regen_suspect_second_review_pass_releases():
+    """重生成后仍 SUSPECT → 二次 LLM 审核通过 → 放行(重生成 1 次内闭环,不降级)。"""
+    audit = FakeAudit()
+    regen_calls = []
+
+    async def regen(feedback):
+        regen_calls.append(feedback)
+        return "您的血糖 9.9 mmol/L,请结合临床关注。\n本内容不构成医学诊断。"  # 仍越界(语义可接受)
+
+    async def degrade():
+        return "降级版:仅数值对照。\n本内容不构成医学诊断。"
+
+    llm = _SeqReviewLLM([{"passed": False, "issues": ["语义越界"]},
+                         {"passed": True, "issues": []}])
+
+    async def go():
+        text, degraded = await enforce_guardrail(
+            "您的血糖 9.9 mmol/L。\n本内容不构成医学诊断。", _ctx(),
+            regen, degrade, llm, audit)
+        return text, degraded
+    text, degraded = asyncio.run(go())
+    assert not degraded and "结合临床关注" in text
+    assert len(regen_calls) == 1  # 只重生成一次
+    assert "越界数值: 9.9" in regen_calls[0] and "语义越界" in regen_calls[0]
+    assert llm.calls == 2  # review1 + review2
+    assert audit.events == ["guardrail_suspect", "review_failed"]  # 二次审核通过 → 无降级事件

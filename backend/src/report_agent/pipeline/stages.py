@@ -189,14 +189,23 @@ async def generate_stage(ctx: StageContext) -> dict:
 
 @register("guardrail")
 async def guardrail_stage(ctx: StageContext) -> dict:
-    """对生成产物执行护栏:总评 + 逐项解读逐一过检,重生成/降级由 enforce 闭环。"""
+    """对生成产物执行护栏:总评 + 逐项解读逐一过检,重生成/降级由 enforce 闭环。
+
+    必含元素按用户可见粒度施加(评审 Important-2 ①②):免责声明是四段式固定
+    元素(assemble_interpretation 恒附,spec §5.4),不对纯文本逐字强索;危急强
+    提醒只要求总评与危急项文本。generate checkpoint 只读(深拷贝),改写/降级
+    结果以 guardrail checkpoint 的 doc 为唯一权威源(评审 Critical-1)。
+    """
+    import copy
+
     from report_agent.guardrails.audit import AuditLog
     from report_agent.guardrails.enforce import enforce_guardrail
     from report_agent.guardrails.rules import GuardrailContext
     from report_agent.pipeline.interpret import build_degraded_interpretation
     from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
 
-    doc = dict(ctx.checkpoints.get("generate", {}).get("doc", {}))
+    # 深拷贝:禁止原地改写 generate checkpoint 内容(live/resume 落库分歧根源)
+    doc = copy.deepcopy(ctx.checkpoints.get("generate", {}).get("doc", {}))
     judgments = [
         ItemJudgment(indicator_code=j["indicator_code"], name=j["name"], value_num=j["value_num"],
                      value_text=j["value_text"], unit=j["unit"], status=ItemStatus(j["status"]),
@@ -212,41 +221,56 @@ async def guardrail_stage(ctx: StageContext) -> dict:
         allowed.append(float(report["age"]))
     has_critical = any(j["critical"] for j in
                        ctx.checkpoints.get("compare", {}).get("judgments", []))
-    gctx = GuardrailContext(allowed_numbers=allowed, require_disclaimer=True,
-                            require_critical_warning=has_critical)
-    audit = AuditLog(ctx.deps.session_factory)
+    sum_ctx = GuardrailContext(allowed_numbers=allowed, require_disclaimer=False,
+                               require_critical_warning=has_critical)
+    audit = AuditLog(ctx.deps.session_factory,
+                     defaults={"report_id": ctx.report["id"], "task_id": ctx.task_id})
     final_doc = dict(doc)
     degraded = False
     findings_all = []
 
     # 1) 总评
     async def regen_summary(feedback):
-        from report_agent.pipeline.interpret import generate_summary
+        from report_agent.pipeline.interpret import ItemInterpretation, generate_summary
 
-        items = doc.get("items", [])
+        # doc items 是四段式 dict,generate_summary 消费 ItemInterpretation 对象
+        items = [
+            ItemInterpretation(
+                indicator_code=i.get("indicator_code"), name=i["name"], status=i["status"],
+                value_text=i["value_text"], meaning=i.get("meaning", ""),
+                risks=list(i.get("risks") or []), advice_level=i["advice_level"],
+                advice=i.get("advice", ""), evidence_ids=list(i.get("evidence_ids") or []),
+            )
+            for i in doc.get("items", [])
+        ]
         matched = [m[0] for m in ctx.checkpoints.get("compare", {}).get("matched_patterns", [])]
         unknown = sum(1 for j in ctx.checkpoints.get("compare", {}).get("judgments", [])
                       if j["status"] == "unknown")
-        return await generate_summary(items, matched, unknown, ctx.deps.llms.chat)
+        return await generate_summary(items, matched, unknown, ctx.deps.llms.chat,
+                                      feedback=feedback)
 
     async def degrade_summary():
         return build_degraded_interpretation(judgments)["summary"]
 
     summary, sum_degraded = await enforce_guardrail(
-        doc.get("summary", ""), gctx, regen_summary, degrade_summary,
+        doc.get("summary", ""), sum_ctx, regen_summary, degrade_summary,
         ctx.deps.llms.chat, audit,
     )
     final_doc["summary"] = summary
     degraded = degraded or sum_degraded
     findings_all.append({"part": "summary", "degraded": sum_degraded})
 
-    # 2) 逐项解读(meaning+advice 合并检)
+    # 2) 逐项解读(meaning+advice 合并检;危急强提醒只对危急项要求)
     new_items = []
     for item in doc.get("items", []):
+        item_ctx = GuardrailContext(
+            allowed_numbers=allowed, require_disclaimer=False,
+            require_critical_warning=str(item.get("status", "")).startswith("critical"),
+        )
         text = f"{item['meaning']}\n建议:{item['advice']}"
 
         async def regen_item(feedback, item=item):
-            # 单项重生成:重跑 interpret_item(证据在 retrieve checkpoint)
+            # 单项重生成:重跑 interpret_item(证据在 retrieve checkpoint),feedback 注入 prompt
             from report_agent.pipeline.interpret import interpret_item
             from report_agent.retrieval.hybrid import Evidence
 
@@ -261,21 +285,26 @@ async def guardrail_stage(ctx: StageContext) -> dict:
                               ref_low=j0["ref_low"], ref_high=j0["ref_high"],
                               critical=j0["critical"], range_source=j0["range_source"])
             kctx = ctx.deps.kg.indicator_context(key) if j0["indicator_code"] else None
-            new_i = await interpret_item(jj, kctx, evs, ctx.deps.llms.chat)
+            new_i = await interpret_item(jj, kctx, evs, ctx.deps.llms.chat, feedback=feedback)
             return f"{new_i.meaning}\n建议:{new_i.advice}"
 
-        async def degrade_item():
-            # degrade 在本次迭代内同步调用(下一轮 for 才重绑 item),闭包引用安全
-            return f"{item['name']}检测结果请以线下医师意见为准。"  # noqa: B023
+        async def degrade_item(item=item):
+            # 危急项降级文本须带可被危急强提醒校验检出的词元(评审 I-2③/⚠️-4)
+            if str(item.get("status", "")).startswith("critical"):
+                return f"{item['name']}达危急值水平,请尽快就医,具体请以线下医师意见为准。"
+            return f"{item['name']}检测结果请以线下医师意见为准。"
 
         new_text, item_degraded = await enforce_guardrail(
-            text, gctx, regen_item, degrade_item, ctx.deps.llms.chat, audit,
+            text, item_ctx, regen_item, degrade_item, ctx.deps.llms.chat, audit,
         )
         if item_degraded or (new_text != text):
             parts = new_text.split("\n建议:", 1)
             item["meaning"] = parts[0]
             if len(parts) > 1:
                 item["advice"] = parts[1]
+            else:
+                # 降级/无建议分隔文本一律清空 advice,不留违规原文(评审 I-1)
+                item["advice"] = ""
         degraded = degraded or item_degraded
         findings_all.append({"part": item["name"], "degraded": item_degraded})
         new_items.append(item)
@@ -310,7 +339,10 @@ async def plan_stage(ctx: StageContext) -> dict:
             ctx_by_code[j.indicator_code] = ctx.deps.kg.indicator_context(j.indicator_code)
     plan = await build_followup_plan(judgments, matched, ctx_by_code, ctx.deps.llms.chat)
 
-    doc = ctx.checkpoints.get("generate", {}).get("doc", {})
+    # 解读行 doc 以 guardrail checkpoint 为权威源(generate 兜底,兼容旧任务/
+    # guardrail-off)——护栏改写/降级内容必须到达用户可见行(spec §4.2/§5.5,评审 Critical-1)
+    doc = (ctx.checkpoints.get("guardrail", {}).get("doc")
+           or ctx.checkpoints.get("generate", {}).get("doc", {}))
     # 解读行 degraded 只取护栏内容安全降级语义(spec §5.5);复查单自身模板降级
     # (plan.degraded)只留在 followup_plans.degraded 列 —— 评审裁决 Important-1(b)
     degraded = bool(ctx.checkpoints.get("guardrail", {}).get("degraded", False))

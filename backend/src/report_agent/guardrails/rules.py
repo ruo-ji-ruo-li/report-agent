@@ -53,7 +53,9 @@ def check_required(text: str, ctx: GuardrailContext) -> list[str]:
     missing = []
     if ctx.require_disclaimer and ("不构成医学诊断" not in text and "免责声明" not in text):
         missing.append("缺少免责声明")
-    if ctx.require_critical_warning and "尽快就医" not in text:
+    if ctx.require_critical_warning and "尽快就医" not in text and "线下就医" not in text:
+        # 词元对齐(评审 I-2③/⚠️-4):降级版/模板措辞为"尽快线下就医"等,
+        # 以"线下就医"一并检出,避免危急提醒文本被误 BLOCK
         missing.append("缺少危急值强提醒(尽快就医)")
     return missing
 
