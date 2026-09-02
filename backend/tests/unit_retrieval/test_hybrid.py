@@ -1,7 +1,7 @@
 import asyncio
 
 from report_agent.config import Settings
-from report_agent.knowledge.kg_client import ConditionFact, IndicatorContext
+from report_agent.knowledge.kg_client import ConditionFact, IndicatorContext, InterventionFact
 from report_agent.knowledge.milvus_client import KnowledgeChunk, ScoredChunk
 from report_agent.retrieval.hybrid import Evidence, HybridRetriever, RetrievalQuery, rrf_merge
 
@@ -106,3 +106,24 @@ def test_search_everything_down_returns_empty():
     store.fail = True
     r = _retriever(store, _fake_kg(fail=True))
     assert asyncio.run(r.search(RetrievalQuery(text="x"))) == []  # 全挂 → 空,由上层占位证据处理
+
+
+def test_search_kg_keeps_distinct_facts():
+    """I1 回归:同指标多条 KG 事实(提示 + 干预)各自独立成键,不坍缩为 1 条。"""
+
+    class K:
+        def indicator_context(self, code):
+            return IndicatorContext(code=code, name="空腹血糖", high_suggests=[
+                ConditionFact(name="糖尿病风险", description=None, strength="strong", note=None),
+                ConditionFact(name="应激性高血糖", description=None, strength="medium", note=None),
+            ], low_suggests=[
+                ConditionFact(name="低血糖风险", description=None, strength="medium", note=None),
+            ], interventions=[
+                InterventionFact(level="lifestyle", text="控制饮食并规律运动", timeframe="持续"),
+            ])
+
+    r = _retriever(_fake_store(), K())
+    evs = asyncio.run(r.search(RetrievalQuery(text="空腹血糖升高", indicator_code="GLU", direction="high")))
+    kg_evs = [e for e in evs if e.source == "kg"]
+    assert len(kg_evs) >= 2  # 修复前同键坍缩只剩 1 条
+    assert len({e.rrf_score for e in kg_evs}) == len(kg_evs)  # 每条事实各自独立计分

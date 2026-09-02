@@ -4,6 +4,7 @@ RRF 融合移植自 C9 hybrid_retrieval.py:629-714,改造点:
 - 去重键 = (source, entity_id 或文本 md5)(C9 用 node_id)
 - 保留 rrf_score/rrf_sources 溯源元数据
 - 同源同文档多 chunk 只计最佳 rank 一次(C9 同)
+- KG 事实非分块"文档":同指标多条事实(entity_id 相同)按文本指纹各自独立成键,不被共享 entity_id 误去重
 任一路失败 → 该路返回空列表,由 RRF 吸收(spec §11)。
 """
 import asyncio
@@ -39,11 +40,14 @@ class Evidence:
 
 
 def _evidence_key(e: Evidence) -> tuple:
-    return (e.source, e.entity_id or hashlib.md5(e.text[:100].encode("utf-8")).hexdigest())
+    """Milvus chunk 按 (source, entity_id) 去重(同文档多 chunk 只计最佳 rank);
+    KG 事实同指标共享 entity_id,改用文本指纹,每条事实独立成键。"""
+    return (e.source, e.entity_id if (e.source != "kg" and e.entity_id)
+            else hashlib.md5(e.text[:100].encode("utf-8")).hexdigest())
 
 
 def rrf_merge(ranked_lists: list[list[Evidence]], top_k: int, k: int = _RRF_K) -> list[Evidence]:
-    """纯排名融合:score(d) = Σ_lists 1/(k + best_rank_l(d))。不 mutate 输入。"""
+    """纯排名融合:score(d) = Σ_lists 1/(k + best_rank_l(d))。不修改输入列表;返回项为输入对象并附融合元数据。"""
     scores: dict[tuple, float] = {}
     best_rank: dict[tuple, int] = {}
     canonical: dict[tuple, Evidence] = {}
