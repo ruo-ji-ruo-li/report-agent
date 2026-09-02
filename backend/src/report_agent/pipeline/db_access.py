@@ -161,7 +161,8 @@ class DataAccess:
                 "normalized": [
                     {"item_name": n.item_name, "indicator_code": n.indicator_code,
                      "value_num": n.value_num, "unit": n.unit, "status": n.status,
-                     "ref_low": n.ref_low, "ref_high": n.ref_high, "critical": n.critical}
+                     "ref_low": n.ref_low, "ref_high": n.ref_high, "critical": n.critical,
+                     "section": n.section}
                     for n in norms
                 ],
             }
@@ -210,3 +211,47 @@ class DataAccess:
             if row is None:
                 return None
             return {"items": row.items, "degraded": row.degraded}
+
+    # ===== 追问会话 =====
+    async def create_session(self, report_id: str) -> str:
+        from report_agent.db.models import ChatSession
+
+        async with self._factory() as s:
+            row = ChatSession(report_id=report_id)
+            s.add(row)
+            await s.commit()
+            await s.refresh(row)
+            return row.id
+
+    async def get_session(self, session_id: str) -> dict | None:
+        from report_agent.db.models import ChatSession
+
+        async with self._factory() as s:
+            row = await s.get(ChatSession, session_id)
+            return {"id": row.id, "report_id": row.report_id} if row else None
+
+    async def add_message(self, session_id: str, role: str, content: str, tool_calls=None,
+                          evidence_ids=None, guardrail_flags=None) -> None:
+        from report_agent.db.models import ChatMessage
+
+        async with self._factory() as s:
+            s.add(ChatMessage(session_id=session_id, role=role, content=content,
+                              tool_calls=tool_calls, evidence_ids=evidence_ids,
+                              guardrail_flags=guardrail_flags))
+            await s.commit()
+
+    async def get_messages(self, session_id: str) -> list[dict]:
+        from sqlalchemy import select
+
+        from report_agent.db.models import ChatMessage
+
+        async with self._factory() as s:
+            rows = (await s.execute(
+                select(ChatMessage).where(ChatMessage.session_id == session_id)
+                .order_by(ChatMessage.created_at)
+            )).scalars().all()
+            return [
+                {"role": r.role, "content": r.content, "guardrail_flags": r.guardrail_flags,
+                 "created_at": r.created_at.isoformat() if r.created_at else None}
+                for r in rows
+            ]
