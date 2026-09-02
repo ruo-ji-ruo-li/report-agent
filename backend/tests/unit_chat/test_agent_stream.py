@@ -1,13 +1,15 @@
-"""LangGraph 1.x 实际 API 对接回归(brief 范围外补充,理由见下)。
+"""LangGraph 1.x 实际 API 对接回归 + 评审 Important-1/2/3 回归。
 
-brief 的单测只覆盖纯函数(route_after_agent)与假件工具逻辑,无法发现
-langgraph 1.2.11 的真实行为偏差——实测已抓到一例:
+本地 stub OpenAI 兼容端点(127.0.0.1 随机端口,零外部依赖、零 key)驱动真实编译图。
+
+覆盖:
 - 版本漂移(⚠️5): 1.x 将 async 工具包装为仅异步 StructuredTool,brief 的
-  `tool_node.invoke(...)` 抛 "StructuredTool does not support sync invocation",
-  已最小适配为 async tools_node + `await tool_node.ainvoke(...)`(agent.py)。
-- 本文件用本地 stub OpenAI 兼容端点(无需 LLM key)驱动完整编译图,
-  锁定: token/tool_call/done 事件契约、工具执行、流式护栏与持久化。
-若 Controller 认为超出单测范围可删除,stub 模式下不触任何外部服务。
+  `tool_node.invoke(...)` 不可用,已最小适配为 async tools_node + ainvoke(agent.py);
+- Important-1: final 双答修复回归——直答路径模型只调 1 次、token 文本单遍;
+  达限(带 tool_calls)路径仍正常收敛调用(单遍);
+- Important-2: user 消息流前持久化——正常与报错路径均先落 user;
+- Important-3: search_knowledge 结束产出 evidence 事件;assistant 持久化携带
+  tool_calls([{name, args_summary}]) 与 evidence_ids(evidence payload 列表)。
 """
 import asyncio
 import json
@@ -17,47 +19,64 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from report_agent.chat.agent import build_chat_agent
 from report_agent.chat.sse import sse_stream
 from report_agent.knowledge.kg_client import IndicatorContext, IndicatorEntry, RangeSpec
+from report_agent.retrieval.hybrid import Evidence
 
 ANSWER = "您的空腹血糖为6.5mmol/L,高于参考上限6.1mmol/L,属升高,建议咨询医生。"
 
+EVIDENCE_OUTPUT = "[e0](来源:dense,标题:空腹血糖)\n空腹血糖升高与糖尿病风险相关"
 
-class _StubHandler(BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
 
-    def _send_json(self, payload: dict):
-        data = json.dumps(payload).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+def _make_server(scenario: str):
+    """scenario: answer(直接文本作答)/ tools_then_answer(先并行 2 工具再作答)/
+    limit_loop(带工具即请求工具,不带工具才作答——用于达限收敛)。返回 (server, counter)。"""
+    counter = {"requests": 0}
 
-    def _send_sse(self, chunks: list[dict]):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        for c in chunks:
-            self.wfile.write(f"data: {json.dumps(c)}\n\n".encode())
-        self.wfile.write(b"data: [DONE]\n\n")
-        self.wfile.flush()
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
 
-    def do_POST(self):
-        n = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(n))
-        msgs = body.get("messages", [])
-        stream = bool(body.get("stream"))
-        model = body.get("model", "stub")
-        prior_tool_calls = [m for m in msgs if m.get("role") == "assistant" and m.get("tool_calls")]
-        if not prior_tool_calls:
-            # 第一轮: 要求调用 get_my_report
-            tc = {"id": "call_1", "type": "function",
-                  "function": {"name": "get_my_report", "arguments": "{}"}}
+        def _send_json(self, payload: dict):
+            data = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_sse(self, chunks: list[dict]):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            for c in chunks:
+                self.wfile.write(f"data: {json.dumps(c)}\n\n".encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+
+        def _answer(self, stream: bool, model: str):
+            mid = len(ANSWER) // 2
+            if stream:
+                self._send_sse([
+                    {"id": "a1", "object": "chat.completion.chunk", "created": 1, "model": model,
+                     "choices": [{"index": 0, "delta": {"role": "assistant", "content": ANSWER[:mid]},
+                                  "finish_reason": None}]},
+                    {"id": "a2", "object": "chat.completion.chunk", "created": 1, "model": model,
+                     "choices": [{"index": 0, "delta": {"content": ANSWER[mid:]},
+                                  "finish_reason": "stop"}]},
+                ])
+            else:
+                self._send_json({
+                    "id": "a1", "object": "chat.completion", "created": 1, "model": model,
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": ANSWER},
+                                 "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+
+        def _tool_calls_reply(self, stream: bool, model: str, calls: list[dict]):
             if stream:
                 self._send_sse([
                     {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": model,
-                     "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [tc]},
+                     "choices": [{"index": 0,
+                                  "delta": {"role": "assistant", "tool_calls": calls},
                                   "finish_reason": None}]},
                     {"id": "c2", "object": "chat.completion.chunk", "created": 1, "model": model,
                      "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
@@ -67,43 +86,44 @@ class _StubHandler(BaseHTTPRequestHandler):
                     "id": "c1", "object": "chat.completion", "created": 1, "model": model,
                     "choices": [{"index": 0,
                                  "message": {"role": "assistant", "content": None,
-                                             "tool_calls": [tc]},
+                                             "tool_calls": calls},
                                  "finish_reason": "tool_calls"}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
-            return
-        # 之后: 文本回答,分两个 chunk 流式返回
-        mid = len(ANSWER) // 2
-        if stream:
-            self._send_sse([
-                {"id": "a1", "object": "chat.completion.chunk", "created": 1, "model": model,
-                 "choices": [{"index": 0, "delta": {"role": "assistant", "content": ANSWER[:mid]},
-                              "finish_reason": None}]},
-                {"id": "a2", "object": "chat.completion.chunk", "created": 1, "model": model,
-                 "choices": [{"index": 0, "delta": {"content": ANSWER[mid:]},
-                              "finish_reason": "stop"}]},
-            ])
-        else:
-            self._send_json({
-                "id": "a1", "object": "chat.completion", "created": 1, "model": model,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": ANSWER},
-                             "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
 
+        def do_POST(self):
+            counter["requests"] += 1
+            n = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(n))
+            msgs = body.get("messages", [])
+            stream = bool(body.get("stream"))
+            has_tools = bool(body.get("tools"))
+            model = body.get("model", "stub")
+            prev_tool_calls = [m for m in msgs
+                               if m.get("role") == "assistant" and m.get("tool_calls")]
+            if scenario == "answer":
+                self._answer(stream, model)
+            elif scenario == "limit_loop":
+                if has_tools:
+                    self._tool_calls_reply(stream, model, [
+                        {"id": f"call_{counter['requests']}", "type": "function",
+                         "function": {"name": "get_my_report", "arguments": "{}"}}])
+                else:
+                    self._answer(stream, model)
+            else:  # tools_then_answer
+                if prev_tool_calls:
+                    self._answer(stream, model)
+                else:
+                    self._tool_calls_reply(stream, model, [
+                        {"id": "call_1", "type": "function",
+                         "function": {"name": "get_my_report", "arguments": "{}"}},
+                        {"id": "call_2", "type": "function",
+                         "function": {"name": "search_knowledge",
+                                      "arguments": '{"query": "空腹血糖"}'}},
+                    ])
 
-class _StubDeps:
-    def __init__(self, port: int):
-        self.db = _FakeDB()
-        self.kg = _FakeKG()
-        self.retriever = _FakeRetriever()
-        self.session_factory = None
-        # 断言回答通过规则护栏(PASS),SUSPECT 分支(deps.llms.chat)不会触发
-        self.llms = None
-        self.settings = type("S", (), {
-            "chat_model": "stub-model",
-            "deepseek_base_url": f"http://127.0.0.1:{port}/v1",
-            "deepseek_api_key": "stub-key",
-            "agent_max_tool_rounds": 8,
-        })()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, counter
 
 
 class _FakeKG:
@@ -135,43 +155,133 @@ class _FakeDB:
     async def add_message(self, session_id, role, content, tool_calls=None,
                           evidence_ids=None, guardrail_flags=None):
         self.saved.append({"session_id": session_id, "role": role, "content": content,
+                           "tool_calls": tool_calls, "evidence_ids": evidence_ids,
                            "guardrail_flags": guardrail_flags})
 
 
 class _FakeRetriever:
     async def search(self, q):
-        return []
+        return [Evidence(text="空腹血糖升高与糖尿病风险相关", source="dense", title="空腹血糖")]
 
 
-def test_agent_sse_full_chain_with_stub_openai():
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), _StubHandler)
-    thread = threading.Thread(target=srv.serve_forever, daemon=True)
-    thread.start()
+class _FakeDeps:
+    def __init__(self, srv, max_rounds: int = 8):
+        self.db = _FakeDB()
+        self.kg = _FakeKG()
+        self.retriever = _FakeRetriever()
+        self.session_factory = None
+        self.llms = None  # 断言通过规则护栏(PASS),SUSPECT 分支不触发
+        self.settings = type("S", (), {
+            "chat_model": "stub-model",
+            "deepseek_base_url": f"http://127.0.0.1:{srv.server_address[1]}/v1",
+            "deepseek_api_key": "stub-key",
+            "agent_max_tool_rounds": max_rounds,
+        })()
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+async def _collect(graph, deps, user_message="我的空腹血糖正常吗"):
+    out = []
+    async for item in sse_stream(graph, deps, "s1", user_message, "r1"):
+        out.append(item)
+    await asyncio.sleep(0.1)  # 等 _persist_user/_persist 后台 task
+    return out
+
+
+def _kinds(events):
+    return [e["event"] for e in events]
+
+
+def test_two_tools_chain_events_evidence_single_answer():
+    """并行 2 工具(报告+知识检索)→ 直答:证据事件、tool_calls/evidence_ids 双写、
+    Important-1 单遍答案。"""
+    srv, counter = _make_server("tools_then_answer")
     try:
-        deps = _StubDeps(srv.server_address[1])
-        graph = build_chat_agent(deps, "r1")
-        events = asyncio.run(_collect(graph, deps))
+        deps = _FakeDeps(srv)
+        events = _run(_collect(build_chat_agent(deps, "r1"), deps))
     finally:
         srv.shutdown()
 
-    kinds = [e["event"] for e in events]
-    assert "tool_call" in kinds  # 工具调用事件
-    assert "token" in kinds and "done" in kinds  # token 流 + done
+    kinds = _kinds(events)
+    assert kinds.count("tool_call") == 4  # 2 工具 × start/end
+    assert "token" in kinds and kinds[-1] == "done"
+    # evidence 事件:search_knowledge 输出文本(已含 [eN] 编号与来源)
+    ev_events = [e["data"] for e in events if e["event"] == "evidence"]
+    assert ev_events == [EVIDENCE_OUTPUT]
+    idx_ev = next(i for i, e in enumerate(events) if e["event"] == "evidence")
+    idx_start = next(i for i, e in enumerate(events)
+                     if e["event"] == "tool_call"
+                     and e["data"] == {"name": "search_knowledge", "status": "start"})
+    assert idx_ev > idx_start
+    # Important-1: token 文本 = 单遍 ANSWER(此前为两遍拼接)
     text = "".join(e["data"] for e in events if e["event"] == "token")
-    assert "6.5" in text and "6.1" in text  # 回答确实流过
-    tool_events = [e["data"] for e in events if e["event"] == "tool_call"]
-    assert tool_events[0] == {"name": "get_my_report", "status": "start"}
-    assert tool_events[1] == {"name": "get_my_report", "status": "end"}
+    assert text == ANSWER
+    assert counter["requests"] == 2  # 1 次工具请求 + 1 次作答;final 短路不再调模型
+    # 持久化: user 先写,assistant 带 tool_calls/evidence_ids
+    assert [m["role"] for m in deps.db.saved] == ["user", "assistant"]
+    user, assistant = deps.db.saved
+    assert user["content"] == "我的空腹血糖正常吗"
+    assert assistant["content"] == ANSWER
+    assert assistant["guardrail_flags"] is None
+    assert {tuple(sorted((k, str(v)) for k, v in t.items()))
+            for t in assistant["tool_calls"]} == {
+        (("args_summary", "{}"), ("name", "get_my_report")),
+        (("args_summary", '{"query": "空腹血糖"}'), ("name", "search_knowledge")),
+    }
+    assert assistant["evidence_ids"] == [EVIDENCE_OUTPUT]
     assert events[-1] == {"event": "done",
                           "data": {"session_id": "s1", "guardrail": "pass"}}
-    # 持久化(user + assistant 各一条;PASS → guardrail_flags None)
+
+
+def test_direct_answer_single_model_call():
+    """Important-1 回归:无工具调用路径 final_node 短路——模型只调 1 次、
+    token 单遍、持久化内容即答案。"""
+    srv, counter = _make_server("answer")
+    try:
+        deps = _FakeDeps(srv)
+        events = _run(_collect(build_chat_agent(deps, "r1"), deps))
+    finally:
+        srv.shutdown()
+
+    assert counter["requests"] == 1  # final 短路:无第二次模型调用
+    text = "".join(e["data"] for e in events if e["event"] == "token")
+    assert text == ANSWER
     assert [m["role"] for m in deps.db.saved] == ["user", "assistant"]
-    assert all(m["guardrail_flags"] is None for m in deps.db.saved)
+    assert deps.db.saved[1]["content"] == ANSWER
+    assert deps.db.saved[1]["tool_calls"] is None
+    assert deps.db.saved[1]["evidence_ids"] is None
 
 
-async def _collect(graph, deps):
-    out = []
-    async for item in sse_stream(graph, deps, "s1", "我的空腹血糖正常吗", "r1"):
-        out.append(item)
-    await asyncio.sleep(0.1)  # 等 _persist 后台 task
-    return out
+def test_converge_at_round_limit_still_single_answer():
+    """达限收敛(最后消息带 tool_calls → final 收敛调用)正常且答案仍单遍。"""
+    srv, counter = _make_server("limit_loop")
+    try:
+        deps = _FakeDeps(srv, max_rounds=3)
+        events = _run(_collect(build_chat_agent(deps, "r1"), deps))
+    finally:
+        srv.shutdown()
+
+    assert counter["requests"] == 5  # 3 次工具请求 + 1 次达限工具请求 + 1 次收敛
+    kinds = _kinds(events)
+    assert kinds.count("tool_call") == 6  # 3 轮工具执行 × start/end
+    text = "".join(e["data"] for e in events if e["event"] == "token")
+    assert text == ANSWER  # 收敛调用产出,单遍
+    assert events[-1]["event"] == "done"
+
+
+def test_user_message_persisted_on_stream_error():
+    """Important-2 回归:图报错路径(user 消息流前已持久化,assistant 不写)。"""
+    class BoomGraph:
+        async def astream_events(self, *args, **kwargs):
+            raise RuntimeError("boom")
+            yield  # pragma: no cover —— async generator,首次迭代即抛
+
+    deps = type("D", (), {"db": _FakeDB()})()  # 报错路径只用到 db.add_message
+
+    events = _run(_collect(BoomGraph(), deps))
+    assert events == [{"event": "error", "data": "生成失败,请稍后重试"}]
+    assert [m["role"] for m in deps.db.saved] == ["user"]
+    assert deps.db.saved[0]["content"] == "我的空腹血糖正常吗"

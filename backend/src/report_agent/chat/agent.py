@@ -53,6 +53,12 @@ def build_chat_agent(deps, report_id: str, checkpointer=None):
         return {"messages": result["messages"], "tool_rounds": state.get("tool_rounds", 0) + 1}
 
     def final_node(state: ChatState) -> dict:
+        # 评审 Important-1(Fix B):agent 已直接作答(最后消息无 tool_calls)时
+        # 该消息即最终答案,直接短路返回,避免同一答案二次生成(成本翻倍 +
+        # 历史拼接损坏);仅真正达限(最后消息仍带 tool_calls)才做收敛调用。
+        last = state["messages"][-1] if state["messages"] else None
+        if not getattr(last, "tool_calls", None):
+            return {}
         return {"messages": [model.invoke(
             [SystemMessage(content=load_prompt("agent_system") + CONVERGE_INSTRUCTION),
              *state["messages"]]
