@@ -1,0 +1,97 @@
+# 高频体检指标起草清单。code 为指标英文缩写;起草后人工校对再入库。
+- code: GLU
+  name: 空腹血糖
+  category: 糖代谢
+  aliases: [血糖, FBG]
+- code: HBA1C
+  name: 糖化血红蛋白
+  category: 糖代谢
+  aliases: [糖化, HbA1c]
+- code: TC
+  name: 总胆固醇
+  category: 血脂
+  aliases: [胆固醇, CHOL]
+- code: TG
+  name: 甘油三酯
+  category: 血脂
+  aliases: [三酰甘油]
+- code: HDL_C
+  name: 高密度脂蛋白胆固醇
+  category: 血脂
+  aliases: [高密度脂蛋白, HDL]
+- code: LDL_C
+  name: 低密度脂蛋白胆固醇
+  category: 血脂
+  aliases: [低密度脂蛋白, LDL]
+- code: ALT
+  name: 丙氨酸氨基转移酶
+  category: 肝功能
+  aliases: [谷丙转氨酶]
+- code: AST
+  name: 天冬氨酸氨基转移酶
+  category: 肝功能
+  aliases: [谷草转氨酶]
+- code: GGT
+  name: γ-谷氨酰转移酶
+  category: 肝功能
+  aliases: [谷氨酰转肽酶]
+- code: ALP
+  name: 碱性磷酸酶
+  category: 肝功能
+  aliases: []
+- code: TBIL
+  name: 总胆红素
+  category: 肝功能
+  aliases: [胆红素]
+- code: ALB
+  name: 白蛋白
+  category: 肝功能
+  aliases: [清蛋白]
+- code: CREA
+  name: 肌酐
+  category: 肾功能
+  aliases: [血肌酐, Cr]
+- code: UREA
+  name: 尿素
+  category: 肾功能
+  aliases: [尿素氮, BUN]
+- code: UA
+  name: 尿酸
+  category: 肾功能
+  aliases: [血尿酸]
+- code: WBC
+  name: 白细胞计数
+  category: 血常规
+  aliases: [白细胞, WBC计数]
+- code: RBC
+  name: 红细胞计数
+  category: 血常规
+  aliases: [红细胞]
+- code: HGB
+  name: 血红蛋白
+  category: 血常规
+  aliases: [血红蛋白浓度, Hb]
+- code: PLT
+  name: 血小板计数
+  category: 血常规
+  aliases: [血小板]
+- code: NEUT
+  name: 中性粒细胞百分比
+  category: 血常规
+  aliases: [中性粒细胞比率]
+- code: TSH
+  name: 促甲状腺激素
+  category: 甲状腺
+  aliases: []
+- code: FT3
+  name: 游离三碘甲状腺原氨酸
+  category: 甲状腺
+  aliases: []
+- code: FT4
+  name: 游离甲状腺素
+  category: 甲状腺
+  aliases: []
+- code: UP
+  name: 尿蛋白
+  category: 尿常规
+  aliases: [尿蛋白定性, PRO]

@@ -1,0 +1,40 @@
+code: GLU
+name: 空腹血糖
+aliases: [血糖, FBG, 空腹葡萄糖]
+unit: mmol/L
+unit_conversions:
+  mg/dL: 0.0555
+category: 糖代谢
+description: 空腹血糖指隔夜禁食 8 小时以上测定的血浆葡萄糖浓度,是糖代谢状态的基础筛查指标。
+ranges:
+  - sex: any
+    age_min: 18
+    age_max: 100
+    low: 3.9
+    high: 6.1
+    critical_low: 2.8
+    critical_high: 22.0
+    source_note: 成人通用参考区间,以报告所示区间为准
+high_suggests:
+  - condition: 糖尿病风险
+    strength: strong
+    note: 6.1~7.0 mmol/L 为空腹血糖受损(糖尿病前期),≥7.0 mmol/L 需结合糖化血红蛋白与临床进一步评估
+  - condition: 应激性高血糖
+    strength: weak
+    note: 感染、手术、急性疾病等应激状态可致一过性升高
+low_suggests:
+  - condition: 低血糖
+    strength: strong
+    note: <3.9 mmol/L 为低血糖,<2.8 mmol/L 为危急值,需警惕
+clusters: [糖代谢]
+interventions:
+  - level: lifestyle
+    text: 控制精制碳水与含糖饮料摄入,规律运动,控制体重
+  - level: recheck
+    text: 复查空腹血糖,必要时加查糖化血红蛋白与口服葡萄糖耐量试验(OGTT)
+    timeframe: 2-4周
+    departments: [内分泌科]
+narrative: |
+  空腹血糖是诊断糖尿病与糖尿病前期最常用的指标之一。单纯一次轻度升高可能与饮食、
+  应激、测量时间等因素有关,需结合糖化血红蛋白、OGTT 及临床症状综合判断。
+  本产品不构成医学诊断,异常结果请咨询医生。

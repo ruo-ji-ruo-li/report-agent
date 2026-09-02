@@ -1,0 +1,6 @@
+name: 代谢综合征倾向
+description: 甘油三酯升高、HDL-C 降低与血糖升高同时出现,提示代谢综合征风险,建议综合评估。
+criteria:
+  - {indicator_code: TG, direction: high}
+  - {indicator_code: HDL_C, direction: low}
+  - {indicator_code: GLU, direction: high}
