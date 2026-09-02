@@ -25,10 +25,15 @@ async def main() -> None:
     args = parser.parse_args()
 
     from report_agent.config import get_settings
-    from report_agent.eval_metrics import compare_baseline, compute_code_f1, status_accuracy
+    from report_agent.eval_metrics import (
+        compare_baseline,
+        compute_code_f1,
+        guardrail_violations,
+        status_accuracy,
+    )
     from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
     from report_agent.pipeline.deps import build_deps
-    from report_agent.pipeline.rule_compare import judge_all
+    from report_agent.pipeline.rule_compare import judge_all, parse_range_text
 
     settings = get_settings()
     deps = await build_deps(settings)
@@ -38,6 +43,11 @@ async def main() -> None:
     evidence_total = 0
 
     report_files = sorted(REPORTS_DIR.glob("*.json"))
+    # (评审 I-④,brief 偏差: 空评测集时各维度缺省 1.0 会静默 [PASS] 并可冻结全 1.0
+    #  空基线 —— 直接报错退出(exit 2),规则层/证据/QA 维度只在非空集上计算)
+    if not report_files:
+        print(f"[FAIL] 评测集为空: {REPORTS_DIR} 下没有评测报告,禁止评测与冻结基线")
+        sys.exit(2)
     for path in report_files:
         data = json.loads(path.read_text("utf-8"))
         raws = [RawReportItem(**r) for r in data["raw_items"]]
@@ -99,7 +109,20 @@ async def main() -> None:
     numeric_ok, numeric_total = 0, 0
     for path in report_files[:args.max_llm_reports]:
         data = json.loads(path.read_text("utf-8"))
-        allowed = [r["value_num"] for r in data["raw_items"] if r.get("value_num") is not None]
+        # (评审 I-①,brief 口径修正: SUSPECT 计败后白名单必须覆盖解读可合法引用的
+        #  全部数值 —— 报告值 ∪ 报告区间上下界 ∪ 年龄,对齐 chat/sse.py 的 allowed
+        #  语义;否则正常引用"参考区间 3.9~6.1"即误报)
+        allowed: list[float] = []
+        for r in data["raw_items"]:
+            if r.get("value_num") is not None:
+                allowed.append(r["value_num"])
+            lo, hi = parse_range_text(r.get("ref_range_text"))
+            if lo is not None:
+                allowed.append(lo)
+            if hi is not None:
+                allowed.append(hi)
+        if data["meta"].get("age") is not None:
+            allowed.append(float(data["meta"]["age"]))
         # 复用第 2 步的 gt 归一化口径生成判定
         gt_items = [
             NormalizedItem(
@@ -127,43 +150,81 @@ async def main() -> None:
             text = f"{interp.meaning}\n建议:{interp.advice}"
             numeric_total += 1
             g = rule_guardrail(text, GuardrailContext(allowed_numbers=allowed))
-            if g.verdict.value != "block":
-                numeric_ok += 1
-            else:
+            # (评审 I-①: 两维解耦 —— BLOCK → safety;SUSPECT 且含"越界数值" → numeric
+            #  违规。修前按 verdict != "block" 计 pass,SUSPECT(数值越界的唯一定义)
+            #  恒计通过,numeric_consistency 与 safety 共线、数值编造回归不可检出)
+            safety, numeric_bad = guardrail_violations(g.verdict.value, g.findings)
+            if safety:
                 metrics["safety_violations"] += 1
+            if not numeric_bad:
+                numeric_ok += 1
         summary = await generate_summary([], [], 0, deps.llms.chat)
         numeric_total += 1
         g = rule_guardrail(summary, GuardrailContext(allowed_numbers=allowed))
-        if g.verdict.value != "block":
-            numeric_ok += 1
-        else:
+        safety, numeric_bad = guardrail_violations(g.verdict.value, g.findings)
+        if safety:
             metrics["safety_violations"] += 1
+        if not numeric_bad:
+            numeric_ok += 1
     metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
-    # 5) 拒答 QA(30 条,需要 eval/fixtures 报告已入库:先跑一次 smoke.py 或手工上传样例)
+    # 5) 拒答 QA(30 条,评审 I-②)—— uuid4 主键下不存在 "eval_fixture" 类 id 的
+    #    可达路径,故开跑时自建 fixture 报告行: 镜像评测集第 1 份报告(eval/reports/
+    #    排序首份,即 qa 作者对题的基准)的前 3 个 raw_items + 同口径 gt 归一化与规则
+    #    判定落库,使 build_chat_agent 的 get_my_report/compute_reference_range 工具
+    #    可查真实数据(数值类 QA 的 must_contain 才可达)。建行失败(无 postgres)则
+    #    跳过本维并显著告警 —— refusal_correct 记 1.0(注明 QA 未跑),不阻断门禁。
     from report_agent.chat.agent import build_chat_agent
 
     qa_correct, qa_total = 0, 0
     if QA_FILE.exists():
-        for line in QA_FILE.read_text("utf-8").splitlines():
-            if not line.strip():
-                continue
-            qa = json.loads(line)
-            qa_total += 1
-            graph = build_chat_agent(deps, "eval_fixture")
-            result = await graph.ainvoke(
-                {"messages": [{"role": "user", "content": qa["question"]}], "tool_rounds": 0}
-            )
-            answer = result["messages"][-1].content or ""
-            ok = True
-            for s in qa.get("must_contain", []):
-                if s not in answer:
-                    ok = False
-            for s in qa.get("must_not_contain", []):
-                if s in answer:
-                    ok = False
-            if ok:
-                qa_correct += 1
+        fixture = json.loads(report_files[0].read_text("utf-8"))
+        fixture_meta = ReportMeta(sex=fixture["meta"].get("sex"),
+                                  age=fixture["meta"].get("age"))
+        qa_report_id = None
+        try:
+            qa_report_id = await deps.db.create_report("manual", None, fixture_meta)
+            raws3 = [RawReportItem(**r) for r in fixture["raw_items"][:3]]
+            await deps.db.save_raw_items(qa_report_id, raws3)
+            gt3 = []
+            for i, r in enumerate(fixture["raw_items"][:3]):
+                code = fixture["gt_codes"].get(r["name"])
+                gt3.append(NormalizedItem(
+                    raw_index=i, section=r.get("section"), name=r["name"], indicator_code=code,
+                    value_text=r.get("value_text"), value_num=r.get("value_num"),
+                    unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
+                    ref_range_text=r.get("ref_range_text"), range_from="report",
+                ))
+            specs3 = {}
+            for it in gt3:
+                if it.indicator_code and it.indicator_code not in specs3:
+                    specs3[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
+            await deps.db.save_normalized(qa_report_id, gt3)
+            await deps.db.apply_judgments(qa_report_id, judge_all(gt3, specs3, fixture_meta))
+        except Exception as e:  # noqa: BLE001 —— 无 postgres 等:QA 维跳过,不阻断门禁
+            print(f"[warn] QA 维度跳过(fixture 报告行创建失败,需 postgres 可用): {e}")
+        if qa_report_id is not None:
+            for line in QA_FILE.read_text("utf-8").splitlines():
+                if not line.strip():
+                    continue
+                qa = json.loads(line)
+                qa_total += 1
+                graph = build_chat_agent(deps, qa_report_id)
+                result = await graph.ainvoke(
+                    {"messages": [{"role": "user", "content": qa["question"]}], "tool_rounds": 0}
+                )
+                answer = result["messages"][-1].content or ""
+                ok = True
+                for s in qa.get("must_contain", []):
+                    if s not in answer:
+                        ok = False
+                for s in qa.get("must_not_contain", []):
+                    if s in answer:
+                        ok = False
+                if ok:
+                    qa_correct += 1
+    else:
+        print("[warn] 无 eval/qa_pairs.jsonl,拒答维度未实跑(refusal_correct 记 1.0)")
     metrics["refusal_correct"] = round(qa_correct / qa_total, 4) if qa_total else 1.0
 
     if args.update_baseline:
