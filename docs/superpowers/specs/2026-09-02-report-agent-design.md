@@ -27,6 +27,7 @@
 | 参考区间优先级 | **报告自带区间优先**(反映检测方法特异性),缺失时用 KG 按(指标×性别×年龄段)补全;**危急值阈值永远来自 KG**;两者差异显著时记 audit 事件 |
 | 编排形态 | 解读管线为纯 async 显式阶段代码;**LangGraph 仅用于追问 Agent**(Postgres checkpointer)——"必要处使用" |
 | 异步任务机制 | 进程内 asyncio + Postgres 状态表(checkpoints)+ 启动恢复;不引入 Celery/Redis |
+| PDF 文字层解析 | **Unstructured** `partition_pdf`(hi_res 策略 + `infer_table_structure`),替代 pdfplumber;strategy 走 env 可切(fast 应急兜底);扫描型 PDF(无文字层)仍走视觉模型;hi_res 模型工件构建期预烘进镜像 |
 | 仓库与依赖 | 独立 git 仓库于 `D:\DeskTop\agent\report-agent`;目录分 `backend/` + `frontend/`(预留)+ `docs/`;依赖管理 uv + pyproject.toml,Python 3.13 |
 
 ## 3. 系统架构与代码结构
@@ -93,7 +94,7 @@ report-agent/
 | 向量/全文检索 | Milvus 2.5.x:HNSW(dense)+ BM25 Function + jieba analyzer(sparse) |
 | 会话持久化 | `langgraph-checkpoint-postgres`,thread_id = session_id |
 | Postgres 访问 | SQLAlchemy 2.0 async + asyncpg |
-| PDF 文字层 | pdfplumber(表格提取);页渲染 pymupdf |
+| PDF 解析 | Unstructured `partition_pdf`(hi_res + `infer_table_structure`);页渲染 pymupdf |
 | 日志 | structlog JSON 输出 |
 
 ## 4. 数据模型
@@ -176,17 +177,21 @@ report-agent/
 三种输入共用同一输出模型(`RawReportItem[] + ReportMeta`):
 
 ```
-电子 PDF ──pdfplumber 表格提取──→ 规则解析成功(有效项≥阈值)
-              │ 提取不足            ↓
-              └──────────→ 页渲染为图(pymupdf)──┐
-拍照/扫描件 ─────────────────────────────────────┤
-                                                ↓
-                              多模态解析(deepseek-v4-flash-vision-exp)
-                              逐页 → JSON 结构化输出 → 合并去重
-手动录入 ──POST JSON,跳过解析──────────────→ 同一数据模型
+电子 PDF(有文字层)
+   │ Unstructured partition_pdf(hi_res + infer_table_structure)
+   │ → 元素流: Table(HTML) / Title / NarrativeText
+   │ → 规则解析: Table 行 → 检验项
+   │ 提取不足(有效项<阈值) ↓
+   └──────────→ 页渲染为图(pymupdf)──┐
+拍照/扫描件 ───────────────────────────────┤
+                                          ↓
+                多模态解析(deepseek-v4-flash-vision-exp)
+                逐页 → JSON 结构化输出 → 合并去重
+手动录入 ── POST JSON,跳过解析 ──────────→ 同一数据模型
 ```
 
 - 多模态解析:指数退避重试 3 次(1s/2s/4s)→ schema 校验失败带错误反馈再试 1 次 → 仍失败则任务置 `failed` 并附引导信息("请改用拍照上传或手动录入"),**不产半成品**
+- Unstructured 配置:strategy 与 infer_table_structure 走 env(默认 hi_res + True);hi_res 模型工件(YOLOX 等)构建期预下载进镜像,避免运行时拉取;元素分类对"检查描述+结论"型报告(超声/心电,非表格)同样适用
 - meta(性别/年龄)缺失 → 任务暂停 `awaiting_meta`,`PATCH /api/reports/{id}/meta` 补录后从 normalize 阶段继续
 
 ### 5.2 归一化(代码为主,LLM 增强一处)
@@ -397,7 +402,7 @@ Pattern(组合模式)与 Condition 的种子同样以 YAML 管理,入库为对�
 | 图数据库 | Neo4j 5.x community(neo4j Python driver 5.x) | docker-compose |
 | 向量+全文 | Milvus 2.5.x standalone + pymilvus 2.5.x | etcd + minio,HNSW + BM25/jieba |
 | 结构化存储 | PostgreSQL 16 + SQLAlchemy 2.0 async + asyncpg | docker-compose |
-| PDF | pdfplumber(文字层表格)+ pymupdf(页渲染) | |
+| PDF | Unstructured(`unstructured[pdf]`,hi_res + 表格结构推断)+ pymupdf(页渲染) | 模型工件预烘进镜像 |
 | 中文分词 | Milvus 内建 jieba analyzer(BM25 路) | |
 | 日志 | structlog | JSON 输出 |
 | 依赖管理 | uv + pyproject.toml,Python 3.13 | |
@@ -407,7 +412,7 @@ Pattern(组合模式)与 Condition 的种子同样以 YAML 管理,入库为对�
 1. **Milvus jieba analyzer + BM25 Function 组合验证**:在所 pin 的 Milvus 2.5.x 版本上验证 analyzer 配置与稀疏索引创建、中文查询分词效果。失败兜底:Postgres FTS(zhparser + GIN,chunk 文本表放 PG)
 2. **deepseek-v4-flash-vision-exp 结构化输出能力**:验证 JSON 输出稳定性与页图分辨率要求;必要时用 prompt 约束 + 宽松解析重试
 3. **LangSmith 开关与 DeepSeek OpenAI 兼容接口的 tracing 兼容性**:可选功能,失败仅降级为纯日志
-4. **pdfplumber 对常见体检报告版式的表格提取率**:决定"提取不足"阈值的经验值
+4. **Unstructured hi_res 对中文体检报告的解析质量与耗时**:表格结构(HTML 行)还原率、CPU 每页耗时、模型工件离线打包可行性;决定"提取不足"阈值的经验值,以及 fast 策略兜底是否必要
 
 ## 16. 建设顺序建议(供实现规划参考)
 
