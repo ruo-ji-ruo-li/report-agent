@@ -157,9 +157,13 @@ report-agent/
 | dense_vec | FLOAT_VECTOR(1024) | DashScope text-embedding-v3,HNSW M=16 efC=200 COSINE |
 | entity_type | VARCHAR | indicator/condition/cluster/pattern |
 | entity_id | VARCHAR | 指向 KG 节点(code/name),**增量更新删除键** |
-| title / chunk_index / total_chunks / parent_id | | 父文档回填用(自 C9 继承) |
+| title / section_title / chunk_index / total_chunks / parent_id | | parent_id 仅作引用溯源(证据引用展示来源文档),**不做上下文回填** |
 
 - 文档来源:KG 节点结构化释义文档(机器拼装)+ 种子 YAML 的 narrative 自由文本 → 按语义边界切块(C9 三级分块策略:语义边界优先、长度滑窗兜底)
+- **不做父文档回填**(与 C9 的关键差异):医学指南类文档很长,整篇回填会占爆逐项证据上下文;解读的完整性由 KG 路结构化事实保障,向量证据为补充。保证 chunk 自含的替代手段:
+  1. **短文档(≤1200 字)整篇单块存储**——KG 派生释义文档的常态,天然完整
+  2. **长文档切块前置上下文头**:每个 chunk 的入库文本 = 文档标题 + 章节标题 + 原文,脱离全文仍可读
+  3. **证据上下文预算**:逐异常项证据组装设字符上限(默认 6000,env 可配),超出按 RRF 排序从低分端丢弃,防止语料扩充后 prompt 失控
 - **增量更新 = 按 entity_id delete + insert**(dense 由 DashScope 生成、sparse 由 text 自动生成)
 - 检索时对同一 collection 发两次独立 search(dense / fulltext),各自带 `search_method` 标记进入应用层 RRF
 
@@ -378,7 +382,7 @@ Pattern(组合模式)与 Condition 的种子同样以 YAML 管理,入库为对�
 
 **直接继承**:RRF 融合实现(`hybrid_retrieval.py:629-714`,含同源去重/canonical 选择/metadata 溯源)、三路召回 candidate_k 策略、模块分解+构造注入+LLM client 单例、流式生成三层降级链、Document metadata 溯源透传、离线批处理断点续传+分批落盘、三级分块策略、"LLM→JSON→规则兜底"模板。
 
-**规避(已知缺陷)**:ENTITY_RELATION/PATH_FINDING 空桩、constraints 解析后丢弃、env→config 未接线、增量接口未接线、检索非确定性(LLM 关键词抽取温度抖动——本设计检索入口全部确定性词典匹配,消除此问题)、prompt 复制粘贴两份(集中到 llm/prompts/)。
+**规避(已知缺陷或域不适配)**:ENTITY_RELATION/PATH_FINDING 空桩、constraints 解析后丢弃、env→config 未接线、增量接口未接线、检索非确定性(LLM 关键词抽取温度抖动——本设计检索入口全部确定性词典匹配,消除此问题)、prompt 复制粘贴两份(集中到 llm/prompts/)、**父文档回填机制**(非缺陷但不适配医学长文档,改为短文单块 + chunk 上下文头 + 证据字符预算,见 §4.3)。
 
 **明确不做**:LLM 意图路由器(需求决策 5,三入口在 API 层显式区分);本设计检索层无需 LLM 查询理解(管线侧 code 已知,Agent 侧词典匹配)。
 
