@@ -1,0 +1,118 @@
+"""归一化:词典匹配(规则) → 单位换算(按指标) → 未命中批量 LLM 映射(增强)→ unknown 兜底。"""
+import re
+
+from report_agent.knowledge.kg_client import IndicatorEntry
+from report_agent.llm.client import LLMError
+from report_agent.llm.prompts import load_prompt
+from report_agent.observability import get_logger
+from report_agent.parsing.schemas import NormalizedItem, RawReportItem
+
+log = get_logger(__name__)
+
+
+def _norm_text(s: str) -> str:
+    """全角→半角、去空白、小写。用于匹配索引。"""
+    out = []
+    for ch in s:
+        code = ord(ch)
+        if code == 0x3000:
+            out.append(" ")
+        elif 0xFF01 <= code <= 0xFF5E:
+            out.append(chr(code - 0xFEE0))
+        else:
+            out.append(ch)
+    return re.sub(r"\s+", "", "".join(out)).lower()
+
+
+def _match_keys(entry: IndicatorEntry) -> list[str]:
+    """别名产生两个匹配键:原样归一化 + 去掉括号内容的归一化。"""
+    keys = []
+    for alias in [entry.name, *entry.aliases]:
+        k = _norm_text(alias)
+        keys.append(k)
+        no_paren = re.sub(r"[\(（][^)）]*[\)）]", "", alias)
+        if no_paren != alias:
+            keys.append(_norm_text(no_paren))
+    return keys
+
+
+def match_indicator(name: str, entries: list[IndicatorEntry]) -> str | None:
+    key = _norm_text(name)
+    for e in entries:
+        if key in _match_keys(e):
+            return e.code
+    no_paren = re.sub(r"[\(（][^)）]*[\)）]", "", name)
+    if no_paren != name:
+        # 括号变体候选:先试去掉括号后的外层名,再试括号内内容。
+        # 例:报告写 "空腹葡萄糖(空腹血糖)",外层不在目录,但括号内 "空腹血糖" 是 GLU 名称。
+        for cand in [no_paren, *re.findall(r"[\(（]([^)）]*)[\)）]", name)]:
+            key2 = _norm_text(cand)
+            if not key2:
+                continue
+            for e in entries:
+                if key2 in _match_keys(e):
+                    return e.code
+    return None
+
+
+def convert_value(value: float, from_unit: str | None, entry: IndicatorEntry) -> tuple[float, str | None]:
+    """value_standard = value_from × factor(seed YAML 的 unit_conversions 语义)。"""
+    if from_unit is None or entry.unit is None or from_unit == entry.unit:
+        return value, from_unit
+    if from_unit in entry.unit_conversions:
+        return value * entry.unit_conversions[from_unit], entry.unit
+    return value, from_unit  # 无换算表 → 原值原单位,判定用报告区间
+
+
+async def map_unknown_names(
+    names: list[str], entries: list[IndicatorEntry], llm
+) -> dict[str, str | None]:
+    """未命中项批量一次 LLM 调用尝试映射(候选列表 + JSON 输出);失败全 None。"""
+    prompt = load_prompt("alias_map")
+    catalog = [{"code": e.code, "name": e.name, "aliases": e.aliases} for e in entries]
+    messages = [
+        {"role": "user", "content": prompt.format(catalog=repr(catalog), names=repr(names))},
+    ]
+    try:
+        result = await llm.complete_json(messages)
+        return {k: (v if v in {e.code for e in entries} else None) for k, v in result.items()}
+    except LLMError as e:
+        log.warning("alias_map_llm_failed", error=str(e))
+        return {n: None for n in names}
+
+
+class Normalizer:
+    def __init__(self, entries: list[IndicatorEntry]):
+        self._entries = entries
+
+    async def normalize(
+        self, raw_items: list[RawReportItem], llm=None
+    ) -> list[NormalizedItem]:
+        out: list[NormalizedItem] = []
+        unknown_raises: list[int] = []
+        for idx, raw in enumerate(raw_items):
+            code = match_indicator(raw.name, self._entries)
+            item = NormalizedItem(
+                raw_index=idx, section=raw.section, name=raw.name, indicator_code=code,
+                value_text=raw.value_text, value_num=raw.value_num, unit=raw.unit,
+                raw_value_num=raw.value_num, raw_unit=raw.unit,
+                ref_range_text=raw.ref_range_text,
+                range_from="report" if raw.ref_range_text else None,
+            )
+            if code is not None:
+                entry = next(e for e in self._entries if e.code == code)
+                if raw.value_num is not None:
+                    item.value_num, item.unit = convert_value(raw.value_num, raw.unit, entry)
+            else:
+                unknown_raises.append(idx)
+            out.append(item)
+
+        if unknown_raises and llm is not None:
+            mapping = await map_unknown_names(
+                [raw_items[i].name for i in unknown_raises], self._entries, llm
+            )
+            for i, idx in enumerate(unknown_raises):
+                code = mapping.get(raw_items[idx].name)
+                if code:
+                    out[idx].indicator_code = code
+        return out
