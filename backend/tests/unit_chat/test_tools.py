@@ -38,10 +38,11 @@ class FakeRetriever:
 
 
 class FakeDeps:
-    def __init__(self):
+    def __init__(self, threshold: float = 0.0):
         self.kg = FakeKG()
         self.db = FakeDB()
         self.retriever = FakeRetriever()
+        self.settings = type("S", (), {"refusal_rrf_threshold": threshold})()
 
 
 def test_get_my_report_contains_values():
@@ -73,3 +74,30 @@ def test_search_knowledge_empty_hints_refusal():
     tools = {t.__name__: t for t in make_tools(deps, "r1")}
     out = asyncio.run(tools["search_knowledge"](query="量子物理"))
     assert "未检索到" in out
+
+
+class _LowScoreRetriever:
+    def __init__(self, rrf_score):
+        self.rrf_score = rrf_score
+
+    async def search(self, q):
+        return [Evidence(text="近邻文本", source="dense", rrf_score=self.rrf_score)]
+
+
+def test_search_knowledge_below_rrf_threshold_refuses_same_text():
+    """F5:检索结果非空但 top 证据 rrf_score < REFUSAL_RRF_THRESHOLD → 与空结果
+    同文案拒答(Milvus top-k 恒返回近邻,语料外拒答的确定性兜底)。"""
+    deps = FakeDeps(threshold=0.05)
+    deps.retriever = _LowScoreRetriever(rrf_score=0.01)
+    tools = {t.__name__: t for t in make_tools(deps, "r1")}
+    out = asyncio.run(tools["search_knowledge"](query="语料外的罕见病"))
+    assert "未检索到" in out and "[e0]" not in out
+
+
+def test_search_knowledge_at_or_above_threshold_returns_evidence():
+    """F5:阈值 0.05 时 rrf_score=0.05(等于阈值)不算低于 → 正常返回证据(非拒答)。"""
+    deps = FakeDeps(threshold=0.05)
+    deps.retriever = _LowScoreRetriever(rrf_score=0.05)
+    tools = {t.__name__: t for t in make_tools(deps, "r1")}
+    out = asyncio.run(tools["search_knowledge"](query="空腹血糖"))
+    assert "[e0]" in out and "未检索到" not in out

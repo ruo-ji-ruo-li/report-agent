@@ -2,6 +2,9 @@
 from report_agent.parsing.normalizer import match_indicator
 from report_agent.retrieval.hybrid import RetrievalQuery
 
+# 拒答话术(与管线 placeholder 同语义)。sse 层以此文本识别"拒答"并记审计(chat_refusal)。
+REFUSAL_TEXT = "知识库未检索到相关证据。请明确告知用户该问题知识库未覆盖,建议咨询医生。"
+
 
 def make_tools(deps, report_id: str) -> list[callable]:
     db = deps.db
@@ -75,12 +78,19 @@ def make_tools(deps, report_id: str) -> list[callable]:
         return "\n".join(lines)
 
     async def search_knowledge(query: str) -> str:
-        """检索医学知识库(指标知识图谱+向量+全文)。返回证据摘要与编号;无结果时必须拒答。"""
+        """检索医学知识库(指标知识图谱+向量+全文)。返回证据摘要与编号;无结果或 RRF 融合
+        后 top 证据得分低于配置阈值时必须拒答。"""
         code = match_indicator(query, deps.kg.list_indicators())
         q = RetrievalQuery(text=query, indicator_code=code)
         evs = await deps.retriever.search(q)
-        if not evs:
-            return "知识库未检索到相关证据。请明确告知用户该问题知识库未覆盖,建议咨询医生。"
+        # F5: 接线 REFUSAL_RRF_THRESHOLD(spec §6.2 第二层拒答)。Milvus top-k 对任意
+        # 查询恒返回 k 条近邻,空结果拒答不够 —— 语料外问题靠本阈值兜底;默认 0.0 不
+        # 改变现状。rrf_score 可能缺省(占位/单路),缺省不判拒(无分可比)。
+        settings = getattr(deps, "settings", None)
+        threshold = getattr(settings, "refusal_rrf_threshold", 0.0) or 0.0
+        top_score = evs[0].rrf_score if evs else None
+        if not evs or (top_score is not None and top_score < threshold):
+            return REFUSAL_TEXT
         return "\n".join(
             f"[e{i}](来源:{e.source},标题:{e.title or ''})\n{e.text}" for i, e in enumerate(evs)
         )

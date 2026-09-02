@@ -18,7 +18,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from report_agent.guardrails.rules import GuardrailContext, Verdict, rule_guardrail
+from report_agent.guardrails.rules import (
+    GuardrailContext,
+    Verdict,
+    item_guardrail_text,
+    rule_guardrail,
+)
 from report_agent.knowledge.kg_client import (
     IndicatorContext,
     PatternCriterion,
@@ -43,7 +48,8 @@ from report_agent.retrieval.hybrid import Evidence
 
 
 class FakeDB:
-    """记录各写调用;raw/normalized 由测试预置。"""
+    """记录各写调用;raw/normalized 由测试预置。delete_* 模拟报告/任务级先删后写(F3),
+    重跑只保留最近一批行。"""
 
     def __init__(self):
         self.raw_items: list[RawReportItem] = []
@@ -54,6 +60,14 @@ class FakeDB:
         self.applied = None
         self.saved_interpretation = None
         self.saved_followup = None
+        self.delete_raw_calls: list[str] = []
+        self.delete_norm_calls: list[str] = []
+        self.delete_interpretation_calls: list[str] = []
+        self.delete_followup_calls: list[str] = []
+        self.raw_store: list = []
+        self.norm_store: list = []
+        self.interp_store: list = []
+        self.followup_store: list = []
 
     async def get_raw_items(self, report_id):
         return self.raw_items
@@ -66,18 +80,38 @@ class FakeDB:
 
     async def save_raw_items(self, report_id, items):
         self.saved_raw = items
+        self.raw_store.extend(items)
+
+    async def delete_raw_items(self, report_id):
+        self.delete_raw_calls.append(report_id)
+        self.raw_store.clear()
 
     async def save_normalized(self, report_id, items):
         self.saved_norm = items
+        self.norm_store.extend(items)
+
+    async def delete_normalized(self, report_id):
+        self.delete_norm_calls.append(report_id)
+        self.norm_store.clear()
 
     async def apply_judgments(self, report_id, judgments):
         self.applied = judgments
 
     async def save_interpretation(self, report_id, task_id, doc):
         self.saved_interpretation = doc
+        self.interp_store.append(doc)
+
+    async def delete_interpretation(self, task_id):
+        self.delete_interpretation_calls.append(task_id)
+        self.interp_store.clear()
 
     async def save_followup(self, report_id, task_id, doc):
         self.saved_followup = doc
+        self.followup_store.append(doc)
+
+    async def delete_followup(self, task_id):
+        self.delete_followup_calls.append(task_id)
+        self.followup_store.clear()
 
 
 class FakeKG:
@@ -143,10 +177,33 @@ def _raw(name: str, value_num: float | None, unit: str | None = None,
 def test_parse_stage_manual_validates_existing_items():
     db = FakeDB()
     db.raw_items = [_raw("WBC", 5.2, "10^9/L", "3.5-9.5")]
-    report = {"id": "r1", "source": "manual", "file_path": None}
+    report = {"id": "r1", "source": "manual", "file_path": None, "sex": "male", "age": 40.0}
     ctx = StageContext(task_id="t1", report=report, db=db, deps=object())
     payload = asyncio.run(parse_stage(ctx))
     assert payload == {"method": "manual", "n_items": 1, "needs_meta": False}
+
+
+def test_parse_stage_manual_missing_meta_pauses_like_file_paths():
+    """F2: manual 缺 sex/age → needs_meta=True(与 pdf/photo 同语义)。此前恒 False 使
+    compare 抛错 → 任务永久 failed,PATCH meta 无从恢复(死端)。"""
+    db = FakeDB()
+    db.raw_items = [_raw("WBC", 5.2, "10^9/L", "3.5-9.5")]
+    report = {"id": "r1", "source": "manual", "file_path": None, "sex": None, "age": None}
+    ctx = StageContext(task_id="t1", report=report, db=db, deps=object())
+    payload = asyncio.run(parse_stage(ctx))
+    assert payload["method"] == "manual"
+    assert payload["needs_meta"] is True
+    assert payload["n_items"] == 1
+    # runner 收到 needs_meta=True 即 pause_for_meta → PATCH /meta → resume_from_meta,
+    # compare 不再因缺 meta 抛错(runner 语义由 test_runner.test_run_task_needs_meta_pauses 锁定)
+
+    report2 = {"id": "r1", "source": "manual", "file_path": None, "sex": "male", "age": None}
+    ctx2 = StageContext(task_id="t1", report=report2, db=db, deps=object())
+    assert asyncio.run(parse_stage(ctx2))["needs_meta"] is True  # 只缺 age 同样暂停
+
+    report3 = {"id": "r1", "source": "manual", "file_path": None, "sex": "female", "age": 35.0}
+    ctx3 = StageContext(task_id="t1", report=report3, db=db, deps=object())
+    assert asyncio.run(parse_stage(ctx3))["needs_meta"] is False  # meta 齐备直通
 
 
 def test_parse_stage_manual_without_items_raises():
@@ -669,8 +726,10 @@ def test_guardrail_stage_critical_item_advice_violation_degrades_clears_advice()
     assert gen_item["meaning"] == "血糖 25,显著升高,已达危急值水平。"
     assert gen_item["advice"] == "建议每日服用二甲双胍 500mg 控制血糖。"
     assert [e.event_type for e in factory.events] == ["guardrail_block", "degraded_output"]
-    # 回归:降级项 meaning+advice 复合文本在项级 ctx(危急强提醒)下必须 PASS
-    r = rule_guardrail(f"{item['meaning']}\n建议:{item['advice']}",
+    # 回归:降级项复合文本(meaning/risks/advice 三槽口径,F1)在项级 ctx(危急强提醒)
+    # 下必须 PASS;risks 已清空、advice 为空 —— 不留 LLM 违规原文
+    assert item["risks"] == []
+    r = rule_guardrail(item_guardrail_text(item["meaning"], item["risks"], item["advice"]),
                        _gctx(require_critical_warning=True))
     assert r.verdict == Verdict.PASS
 
@@ -728,3 +787,166 @@ def test_plan_stage_interpretation_doc_guardrail_authoritative_generate_fallback
     asyncio.run(plan_stage(ctx2))
     assert db2.saved_interpretation["summary"] == "generate 原文总评"  # 无 guardrail → 兜底
     assert db2.saved_interpretation["degraded"] is False
+
+
+# ================ F1/F3/F6 修复回归(final review 修复轮)================
+
+def test_guardrail_stage_risk_slot_violation_degrades_and_clears_risks():
+    """F1:违规表述只出现在 risks(LLM 自由文本槽位)→ 同样 BLOCK;重生成仍违规 → 降级,
+    risks/advice 清空、meaning 换模板,复合文本复检 PASS —— risks 不再旁路。"""
+    judgments = [_jdict()]
+    compare = _compare_checkpoint(judgments)
+    items = [_gitem("GLU", "空腹血糖", "血糖偏高,建议关注。", "建议复查空腹血糖。")]
+    items[0]["risks"] = ["长期血糖偏高可能提示糖尿病风险", "可考虑服用二甲双胍控制"]
+    doc = _gdoc("本次体检空腹血糖偏高,建议复查。", items)
+    llm = FakeLLM(json_result={"meaning": "血糖偏高。", "risks": ["建议服用阿司匹林预防"],
+                               "advice_level": "recheck", "advice": "建议复查空腹血糖。",
+                               "evidence_ids": []})
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is True
+    item = payload["doc"]["items"][0]
+    assert item["risks"] == []  # 降级后不留 LLM 违规原文(F1)
+    assert item["advice"] == ""
+    assert item["meaning"] == "空腹血糖检测结果请以线下医师意见为准。"
+    assert [e.event_type for e in factory.events] == ["guardrail_block", "degraded_output"]
+    r = rule_guardrail(item_guardrail_text(item["meaning"], item["risks"], item["advice"]),
+                       _gctx())
+    assert r.verdict == Verdict.PASS
+
+
+def test_guardrail_stage_regen_pass_replaces_meaning_risks_advice_all_three():
+    """F1:违规在 advice → 重生成干净(含新 risks)→ 写回三槽整体替换,消除
+    "新 meaning/advice + 旧 risks"错位(旧 risks 若含违规,重生成复检未覆盖即绕过)。"""
+    judgments = [_jdict()]
+    compare = _compare_checkpoint(judgments)
+    items = [_gitem("GLU", "空腹血糖", "血糖偏高,建议关注。", "您患有糖尿病,建议用药治疗。")]
+    items[0]["risks"] = ["需警惕冠心病风险"]
+    doc = _gdoc("本次体检空腹血糖偏高,建议复查。", items)
+    regen_risks = ["建议结合糖化血红蛋白评估"]
+    llm = FakeLLM(json_result={"meaning": "血糖偏高,建议饮食控制。", "risks": regen_risks,
+                               "advice_level": "recheck", "advice": "建议复查空腹血糖。",
+                               "evidence_ids": []})
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1", "age": 40.0},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, deps=deps)
+    payload = asyncio.run(guardrail_stage(ctx))
+    assert payload["degraded"] is False
+    item = payload["doc"]["items"][0]
+    assert item["meaning"] == "血糖偏高,建议饮食控制。"
+    assert item["risks"] == regen_risks  # 新 risks 写入,旧 risks 不残留
+    assert item["advice"] == "建议复查空腹血糖。"
+    assert [e.event_type for e in factory.events] == ["guardrail_block"]
+    # 重生成复检覆盖三槽:新 risks 若含违规,复合文本即 BLOCK,不会整体放行
+    r = rule_guardrail(item_guardrail_text(item["meaning"], ["建议服用阿司匹林"],
+                                           item["advice"]), _gctx())
+    assert r.verdict == Verdict.BLOCK
+
+
+def test_retrieve_stage_placeholder_emits_retrieval_fallback_audit():
+    """F6(b):检索无命中 → 占位证据(降级)记审计 retrieval_fallback(带项名/report/task)。"""
+    retriever = FakeRetriever()
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(
+        settings=SimpleNamespace(retrieve_concurrency=2), retriever=retriever,
+        session_factory=factory)
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": _compare_checkpoint([_jdict()])}, deps=deps)
+    payload = asyncio.run(retrieve_stage(ctx))
+    assert payload["evidence"]["GLU"][0]["source"] == "placeholder"
+    assert [e.event_type for e in factory.events] == ["retrieval_fallback"]
+    assert factory.events[0].payload == {"item": "GLU"}
+    assert factory.events[0].report_id == "r1" and factory.events[0].task_id == "t1"
+
+
+def test_parse_stage_rerun_replaces_raw_rows_single_batch(monkeypatch):
+    """F3:parse 重跑先删该 report 旧 raw 行再写 —— 崩溃窗口恢复不累积重复行。"""
+    items = [_raw("GLU", 6.8, "mmol/L", "3.9-6.1")]
+    out = ParseOutput(items=items, meta=ReportMeta(sex="male", age=40.0), method="unstructured")
+
+    async def fake_parse(file_path, source, settings, llms):
+        return out
+
+    monkeypatch.setattr(stages_mod, "parse_report", fake_parse)
+    db = FakeDB()
+    deps = SimpleNamespace(settings=object(), llms=object())
+    report = {"id": "r1", "source": "pdf", "file_path": "/tmp/r.pdf"}
+    ctx = StageContext(task_id="t1", report=report, db=db, deps=deps)
+    asyncio.run(parse_stage(ctx))
+    asyncio.run(parse_stage(ctx))
+    assert db.delete_raw_calls == ["r1", "r1"]  # 每次写前先删
+    assert len(db.raw_store) == 1  # 单批行,不翻倍
+    assert db.raw_store == items
+
+
+def test_normalize_stage_rerun_keeps_single_batch():
+    """F3:normalize 重跑(崩溃恢复/词典升级后派生层重跑)先删旧行,不累积重复行。"""
+    raws = [_raw("空腹血糖", 6.8, "mmol/L", "3.9-6.1")]
+    converted = [
+        NormalizedItem(
+            raw_index=0, section="生化", name="空腹血糖", indicator_code="GLU",
+            value_text="6.8", value_num=122.4, unit="mg/dL",
+            raw_value_num=6.8, raw_unit="mmol/L", ref_range_text="3.9-6.1",
+            range_from="report",
+        )
+    ]
+    norm = FakeNormalizer(out=converted)
+    deps = SimpleNamespace(normalizer=norm, llms=SimpleNamespace(chat=object()))
+    db = FakeDB()
+    db.raw_items = raws
+    ctx = StageContext(task_id="t1", report={"id": "r1", "source": "pdf"}, db=db, deps=deps)
+    asyncio.run(normalize_stage(ctx))
+    asyncio.run(normalize_stage(ctx))
+    assert db.delete_norm_calls == ["r1", "r1"]
+    assert len(db.norm_store) == 1  # 单批行
+    assert db.norm_store[0].value_num == 122.4
+
+
+def test_plan_stage_rerun_deletes_old_rows_no_unique_collision():
+    """F3:plan 落库前先删同 task_id 旧行 —— interpretations/followup_plans.task_id 唯一,
+    崩溃重跑不撞 IntegrityError;每 task 只留最新一批。"""
+    judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
+    compare = _compare_checkpoint(judgments)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(error=True)
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
+                       deps=deps)
+    asyncio.run(plan_stage(ctx))
+    asyncio.run(plan_stage(ctx))  # 重跑(首轮落库后崩溃,plan checkpoint 未写)
+    assert db.delete_interpretation_calls == ["t1", "t1"]
+    assert db.delete_followup_calls == ["t1", "t1"]
+    assert len(db.interp_store) == 1 and len(db.followup_store) == 1
+
+
+def test_plan_stage_smooth_basis_guardrail_fallback_template_and_audit():
+    """F1(b)/F6(c):LLM 润色 basis 含诊断用语 → 该条回退模板原文、复查单降级,
+    审计 followup_template_fallback;解读行不受影响。"""
+    judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
+    compare = _compare_checkpoint(judgments)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(json_result={"0": "转氨酶升高,您患有脂肪肝,建议用药治疗"})
+    factory = FakeAuditFactory()
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm),
+                           session_factory=factory)
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
+                       deps=deps)
+    payload = asyncio.run(plan_stage(ctx))
+    assert payload == {"n_items": 1, "degraded": True}
+    assert db.saved_followup["degraded"] is True
+    assert db.saved_followup["items"][0]["basis"] == "丙氨酸氨基转移酶 判定升高,建议复查"
+    assert db.saved_interpretation["degraded"] is False  # 复查单自身降级不升任务级
+    assert [e.event_type for e in factory.events] == ["followup_template_fallback"]
+    assert factory.events[0].report_id == "r1" and factory.events[0].task_id == "t1"

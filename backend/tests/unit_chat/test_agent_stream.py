@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from report_agent.chat.agent import build_chat_agent
 from report_agent.chat.sse import sse_stream
+from report_agent.chat.tools import REFUSAL_TEXT
 from report_agent.knowledge.kg_client import IndicatorContext, IndicatorEntry, RangeSpec
 from report_agent.retrieval.hybrid import Evidence
 
@@ -279,9 +280,98 @@ def test_user_message_persisted_on_stream_error():
             raise RuntimeError("boom")
             yield  # pragma: no cover —— async generator,首次迭代即抛
 
-    deps = type("D", (), {"db": _FakeDB()})()  # 报错路径只用到 db.add_message
+    deps = type("D", (), {"db": _FakeDB(), "session_factory": None})()  # 报错路径只用 db.add_message
 
     events = _run(_collect(BoomGraph(), deps))
     assert events == [{"event": "error", "data": "生成失败,请稍后重试"}]
     assert [m["role"] for m in deps.db.saved] == ["user"]
     assert deps.db.saved[0]["content"] == "我的空腹血糖正常吗"
+
+
+class _MemAuditSession:
+    def __init__(self):
+        self.added = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+class _MemAuditFactory:
+    def __init__(self):
+        self.sessions = []
+
+    def __call__(self):
+        s = _MemAuditSession()
+        self.sessions.append(s)
+        return s
+
+    @property
+    def events(self) -> list:
+        return [e for s in self.sessions for e in s.added]
+
+
+def test_tool_rounds_reset_per_user_turn_checkpointer_memory():
+    """F4:checkpointer 按 thread_id 记忆 state 时,每次提问输入必须显式 tool_rounds=0 ——
+    否则轮数跨提问会话级累计,8 轮后该会话永久丧失工具。第二轮必须仍从 0 起算。"""
+
+    class MemGraph:
+        """模拟带 checkpointer 的真实图:跨调用累计 tool_rounds;输入缺省键继承记忆。"""
+
+        def __init__(self):
+            self.memory_tool_rounds = 0
+            self.seen_turns = []
+
+        async def astream_events(self, state, config=None, version=None):
+            if False:
+                yield
+            # LangGraph 合并语义:输入显式键覆盖记忆,缺省键继承 checkpoint 值
+            merged = state.get("tool_rounds", self.memory_tool_rounds)
+            self.seen_turns.append(merged)
+            self.memory_tool_rounds = merged + 1  # 模拟 tools_node 每轮 +1
+
+    deps = type("D", (), {"db": _FakeDB(), "session_factory": None})()
+    graph = MemGraph()
+    for _ in range(2):  # 同一会话两轮提问(共享同一 graph/记忆)
+        events = _run(_collect(graph, deps))
+        assert events[-1]["event"] == "done"
+    # 第一轮累计后(模拟已用 1 轮),第二轮输入仍必须从 0 起算,而非继承记忆值 1
+    assert graph.seen_turns == [0, 0]
+    # messages 仍经 add_messages 追加历史:两轮 user 消息都在
+    assert [m["content"] for m in deps.db.saved if m["role"] == "user"] == \
+        ["我的空腹血糖正常吗", "我的空腹血糖正常吗"]
+
+
+def test_chat_refusal_emits_audit_event():
+    """F6(d):search_knowledge 拒答(空结果/低于 RRF 阈值,输出即 REFUSAL_TEXT)→
+    audit chat_refusal(带截断 query 与 session 关联)。"""
+    class RefusalGraph:
+        async def astream_events(self, state, config=None, version=None):
+            yield {
+                "event": "on_tool_start", "name": "search_knowledge", "run_id": "rid-1",
+                "data": {"input": {"query": "语料外的问题"}},
+            }
+            yield {
+                "event": "on_tool_end", "name": "search_knowledge", "run_id": "rid-1",
+                "data": {"output": REFUSAL_TEXT},
+            }
+
+    factory = _MemAuditFactory()
+    deps = type("D", (), {"db": _FakeDB(), "session_factory": factory})()
+    events = _run(_collect(RefusalGraph(), deps))
+    # 拒答文本不是证据:不发 evidence 事件
+    assert all(e["event"] != "evidence" for e in events)
+    assert [e["event"] for e in events] == ["tool_call", "tool_call", "done"]
+    assert [e.event_type for e in factory.events] == ["chat_refusal"]
+    ev = factory.events[0]
+    assert ev.payload["query"] == "语料外的问题"
+    assert ev.session_id == "s1"
+    assert len(ev.payload["query"]) <= 200  # query 截断

@@ -42,7 +42,13 @@ async def parse_stage(ctx: StageContext) -> dict:
         items = await ctx.db.get_raw_items(ctx.report["id"])
         if not items:
             raise ValueError("手动录入未提供任何检验项")
-        return {"method": "manual", "n_items": len(items), "needs_meta": False}
+        # F2: manual 与 pdf/photo 同语义 —— 缺 sex/age 必须暂停 awaiting_meta,
+        # 否则 compare 抛错使任务永久 failed、PATCH meta 无从恢复(设计决策 2)
+        needs_meta = ctx.report.get("sex") is None or ctx.report.get("age") is None
+        if needs_meta:
+            log.warning("report_meta_missing", task_id=ctx.task_id,
+                        sex=ctx.report.get("sex"), age=ctx.report.get("age"))
+        return {"method": "manual", "n_items": len(items), "needs_meta": needs_meta}
 
     out = await parse_report(
         ctx.report["file_path"], ctx.report["source"], ctx.deps.settings, ctx.deps.llms
@@ -50,6 +56,8 @@ async def parse_stage(ctx: StageContext) -> dict:
     if out is None:
         raise ValueError("解析失败:不支持的来源")
     await ctx.db.update_report_meta(ctx.report["id"], out.meta)
+    # F3: 先删后写 —— 崩溃窗口(DB 写后、checkpoint 前)恢复重跑不累积重复行
+    await ctx.db.delete_raw_items(ctx.report["id"])
     await ctx.db.save_raw_items(ctx.report["id"], out.items)
     needs_meta = out.meta.sex is None or out.meta.age is None
     if needs_meta:
@@ -62,6 +70,8 @@ async def parse_stage(ctx: StageContext) -> dict:
 async def normalize_stage(ctx: StageContext) -> dict:
     raw_items = await ctx.db.get_raw_items(ctx.report["id"])
     items = await ctx.deps.normalizer.normalize(raw_items, llm=ctx.deps.llms.chat)
+    # F3: 报告级先删后写 —— 词典升级后"只重跑归一化及以下阶段"(spec §4.1)可执行
+    await ctx.db.delete_normalized(ctx.report["id"])
     await ctx.db.save_normalized(ctx.report["id"], items)
     return {"n_items": len(items)}
 
@@ -102,9 +112,17 @@ async def compare_stage(ctx: StageContext) -> dict:
 
 @register("retrieve")
 async def retrieve_stage(ctx: StageContext) -> dict:
-    """逐异常项并发检索(信号量限流)。单项失败 → 该项占位证据(spec §11)。"""
+    """逐异常项并发检索(信号量限流)。单项失败/无命中 → 该项占位证据(spec §11)。"""
     from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
     from report_agent.retrieval.hybrid import RetrievalQuery
+
+    audit = None
+    factory = getattr(ctx.deps, "session_factory", None)
+    if factory is not None:
+        from report_agent.guardrails.audit import AuditLog
+
+        audit = AuditLog(factory, defaults={"report_id": ctx.report["id"],
+                                            "task_id": ctx.task_id})
 
     judgments = ctx.checkpoints.get("compare", {}).get("judgments", [])
     abnormal = [
@@ -124,11 +142,14 @@ async def retrieve_stage(ctx: StageContext) -> dict:
                 direction="high" if j.status.value.endswith("high") else "low",
             )
             evs = await ctx.deps.retriever.search(q)
+            key = j.indicator_code or j.name
             if not evs:
                 from report_agent.retrieval.hybrid import Evidence
 
+                # F6(b): 占位即降级 —— 审计检索回退,验收 3(停 Neo4j 场景)可查
+                if audit is not None:
+                    await audit.log("retrieval_fallback", {"item": key})
                 evs = [Evidence(text="知识库未覆盖该项,建议线下咨询医生。", source="placeholder")]
-            key = j.indicator_code or j.name
             return key, [
                 {"text": e.text, "source": e.source, "entity_type": e.entity_type,
                  "entity_id": e.entity_id, "title": e.title, "score": e.score,
@@ -200,7 +221,7 @@ async def guardrail_stage(ctx: StageContext) -> dict:
 
     from report_agent.guardrails.audit import AuditLog
     from report_agent.guardrails.enforce import enforce_guardrail
-    from report_agent.guardrails.rules import GuardrailContext
+    from report_agent.guardrails.rules import GuardrailContext, item_guardrail_text
     from report_agent.pipeline.interpret import build_degraded_interpretation
     from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
 
@@ -260,16 +281,20 @@ async def guardrail_stage(ctx: StageContext) -> dict:
     degraded = degraded or sum_degraded
     findings_all.append({"part": "summary", "degraded": sum_degraded})
 
-    # 2) 逐项解读(meaning+advice 合并检;危急强提醒只对危急项要求)
+    # 2) 逐项解读(meaning/risks/advice 三槽合并检;危急强提醒只对危急项要求)
+    #    F1:risks 是 LLM 自由文本(最多 3 条),必须与 meaning/advice 一并入检,
+    #    否则"建议服用二甲双胍/确诊"类表述放进 risks 即绕过护栏直达用户。
     new_items = []
     for item in doc.get("items", []):
         item_ctx = GuardrailContext(
             allowed_numbers=allowed, require_disclaimer=False,
             require_critical_warning=str(item.get("status", "")).startswith("critical"),
         )
-        text = f"{item['meaning']}\n建议:{item['advice']}"
+        text = item_guardrail_text(item["meaning"], item.get("risks") or [], item["advice"])
 
-        async def regen_item(feedback, item=item):
+        holder: dict = {}
+
+        async def regen_item(feedback, item=item, holder=holder):
             # 单项重生成:重跑 interpret_item(证据在 retrieve checkpoint),feedback 注入 prompt
             from report_agent.pipeline.interpret import interpret_item
             from report_agent.retrieval.hybrid import Evidence
@@ -286,7 +311,8 @@ async def guardrail_stage(ctx: StageContext) -> dict:
                               critical=j0["critical"], range_source=j0["range_source"])
             kctx = ctx.deps.kg.indicator_context(key) if j0["indicator_code"] else None
             new_i = await interpret_item(jj, kctx, evs, ctx.deps.llms.chat, feedback=feedback)
-            return f"{new_i.meaning}\n建议:{new_i.advice}"
+            holder["item"] = new_i  # 结构化带出,供护栏通过后三槽整体替换
+            return item_guardrail_text(new_i.meaning, new_i.risks, new_i.advice)
 
         async def degrade_item(item=item):
             # 危急项降级文本须带可被危急强提醒校验检出的词元(评审 I-2③/⚠️-4)
@@ -298,13 +324,24 @@ async def guardrail_stage(ctx: StageContext) -> dict:
             text, item_ctx, regen_item, degrade_item, ctx.deps.llms.chat, audit,
         )
         if item_degraded or (new_text != text):
-            parts = new_text.split("\n建议:", 1)
-            item["meaning"] = parts[0]
-            if len(parts) > 1:
-                item["advice"] = parts[1]
-            else:
-                # 降级/无建议分隔文本一律清空 advice,不留违规原文(评审 I-1)
+            if item_degraded:
+                # 降级写回:文本为代码模板;advice/risks 一并清空,不留 LLM 违规原文
+                # (评审 I-1;F1:risks 与 advice 同语义)
+                item["meaning"] = new_text
                 item["advice"] = ""
+                item["risks"] = []
+            else:
+                # 重生成通过:meaning/risks/advice 三槽整体替换(结构化,不经文本解析),
+                # 消除"新 meaning/advice + 旧 risks"错位与绕过(F1)
+                new_i = holder.get("item")
+                if new_i is not None:
+                    item["meaning"] = new_i.meaning
+                    item["risks"] = list(new_i.risks)
+                    item["advice"] = new_i.advice
+                else:  # pragma: no cover —— 理论不可达:未降级必有重生成输出
+                    item["meaning"] = new_text
+                    item["advice"] = ""
+                    item["risks"] = []
         degraded = degraded or item_degraded
         findings_all.append({"part": item["name"], "degraded": item_degraded})
         new_items.append(item)
@@ -346,6 +383,10 @@ async def plan_stage(ctx: StageContext) -> dict:
     # 解读行 degraded 只取护栏内容安全降级语义(spec §5.5);复查单自身模板降级
     # (plan.degraded)只留在 followup_plans.degraded 列 —— 评审裁决 Important-1(b)
     degraded = bool(ctx.checkpoints.get("guardrail", {}).get("degraded", False))
+    # F3: 落库前先删同 task_id 旧行 —— interpretations/followup_plans.task_id 唯一,
+    # "两次 DB 写之后、plan checkpoint 之前崩溃 → 恢复重跑"不再撞唯一约束永久 failed
+    await ctx.db.delete_interpretation(ctx.task_id)
+    await ctx.db.delete_followup(ctx.task_id)
     await ctx.db.save_interpretation(ctx.report["id"], ctx.task_id, {**doc, "degraded": degraded})
     await ctx.db.save_followup(
         ctx.report["id"], ctx.task_id,
@@ -354,4 +395,14 @@ async def plan_stage(ctx: StageContext) -> dict:
             for i in plan.items
         ], "degraded": plan.degraded},
     )
+    # F6(c): 复查单模板降级(润色失败/润色 basis 未过护栏回退模板)→ 审计事件
+    audit = None
+    factory = getattr(ctx.deps, "session_factory", None)
+    if factory is not None:
+        from report_agent.guardrails.audit import AuditLog
+
+        audit = AuditLog(factory, defaults={"report_id": ctx.report["id"],
+                                            "task_id": ctx.task_id})
+    if plan.degraded and audit is not None:
+        await audit.log("followup_template_fallback", {"n_items": len(plan.items)})
     return {"n_items": len(plan.items), "degraded": plan.degraded}

@@ -1,6 +1,7 @@
 """复查计划:规则收集(项目/时间窗/科室/依据)+ 模板渲染 + LLM 仅润色依据槽位。spec §5.6。"""
 from dataclasses import dataclass
 
+from report_agent.guardrails.rules import GuardrailContext, Verdict, rule_guardrail
 from report_agent.knowledge.kg_client import IndicatorContext
 from report_agent.llm.client import LLMError
 from report_agent.llm.prompts import load_prompt
@@ -10,6 +11,9 @@ from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
 log = get_logger(__name__)
 
 _ABNORMAL = {ItemStatus.HIGH, ItemStatus.LOW, ItemStatus.CRITICAL_HIGH, ItemStatus.CRITICAL_LOW}
+# F1(b): LLM 润色 basis 的规则检查上下文 —— basis 是复查项目文本,不携报告数值,
+# 故不挂数值白名单(有数字即视为不可信回退模板,不留 LLM 内容)
+_BASIS_GCTX = GuardrailContext(require_disclaimer=False)
 
 
 @dataclass
@@ -99,5 +103,25 @@ async def build_followup_plan(judgments, matched_patterns, ctx_by_code, llm) -> 
     except Exception as e:  # noqa: BLE001
         log.warning("followup_plan_error", error=str(e))
         smoothed = None
-    # 空复查单(全正常报告)无事可润色,不视为降级 —— 评审裁决 Important-1(a)
-    return FollowupPlanDoc(items=smoothed or items, degraded=smoothed is None and len(items) > 0)
+    basis_fallback = False
+    if smoothed is not None:
+        # F1(b): LLM 润色的 basis 槽位同样过规则护栏(诊断/药品/剂量/数值),否则
+        # "复查建议用二甲双胍/已确诊"类表述经润色直达用户(spec §5.5 每 LLM 输出
+        # → 护栏)。SUSPECT/BLOCK → 该条回退模板原文 basis 并记日志,不引发生成级重试。
+        guarded: list[FollowupItem] = []
+        for orig, sm in zip(items, smoothed, strict=True):
+            result = rule_guardrail(sm.basis, _BASIS_GCTX)
+            if result.verdict != Verdict.PASS:
+                log.warning("followup_smooth_basis_guardrail_fallback",
+                            findings=result.findings, item=orig.item)
+                guarded.append(orig)
+                basis_fallback = True
+            else:
+                guarded.append(sm)
+        smoothed = guarded
+    # 空复查单(全正常报告)无事可润色,不视为降级 —— 评审裁决 Important-1(a);
+    # 润色失败或逐条 basis 回退模板 → 复查单 degraded(落 followup_plans.degraded)
+    return FollowupPlanDoc(
+        items=smoothed or items,
+        degraded=(smoothed is None and len(items) > 0) or basis_fallback,
+    )

@@ -102,7 +102,7 @@ async def main() -> None:
     }
 
     # 4) LLM 维度(数值一致性/安全)——成本控制,只跑前 N 份
-    from report_agent.guardrails.rules import GuardrailContext, rule_guardrail
+    from report_agent.guardrails.rules import GuardrailContext, item_guardrail_text, rule_guardrail
     from report_agent.pipeline.interpret import generate_summary, interpret_item
     from report_agent.retrieval.hybrid import RetrievalQuery
 
@@ -147,7 +147,10 @@ async def main() -> None:
                 text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
             kctx = deps.kg.indicator_context(j.indicator_code) if j.indicator_code else None
             interp = await interpret_item(j, kctx, evs, deps.llms.chat)
-            text = f"{interp.meaning}\n建议:{interp.advice}"
+            # F1(c): 逐项护栏文本与管线 guardrail_stage 同口径 —— meaning/risks/advice
+            # 三槽合并检,risks 不再是"安全零违规"门禁的盲点;复查单 basis 是复查项目
+            # 文本(不携报告数值),不纳入本白名单数值检查
+            text = item_guardrail_text(interp.meaning, interp.risks, interp.advice)
             numeric_total += 1
             g = rule_guardrail(text, GuardrailContext(allowed_numbers=allowed))
             # (评审 I-①: 两维解耦 —— BLOCK → safety;SUSPECT 且含"越界数值" → numeric

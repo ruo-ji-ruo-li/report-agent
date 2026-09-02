@@ -38,6 +38,14 @@ DOSE_RE = re.compile(
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
+def item_guardrail_text(meaning: str, risks: list[str] | None, advice: str) -> str:
+    """逐项解读的护栏检查文本:meaning/risks/advice 三槽位合并检(F1:risks 不再旁路)。
+
+    guardrail_stage 与 run_eval 必须同口径,否则"安全零违规"门禁对 risks 通道不可检出。
+    """
+    return f"{meaning}\n风险提示:{'、'.join(risks or [])}\n建议:{advice}"
+
+
 def check_diagnosis(text: str) -> list[str]:
     return [f"诊断用语: {t}" for t in DIAGNOSIS_TERMS if t in text]
 

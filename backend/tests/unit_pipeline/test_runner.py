@@ -40,14 +40,50 @@ class FakeTaskService:
         self.calls.append(("fail", error))
 
 
+class FakeAuditSession:
+    def __init__(self):
+        self.added = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+class FakeAuditFactory:
+    def __init__(self):
+        self.sessions = []
+
+    def __call__(self):
+        s = FakeAuditSession()
+        self.sessions.append(s)
+        return s
+
+    @property
+    def events(self) -> list:
+        return [e for s in self.sessions for e in s.added]
+
+
+class FakeDeps:
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
+
+
 class FakeDB:
     async def get_report(self, report_id):
         return {"id": report_id, "source": "manual", "file_path": None,
                 "sex": "male", "age": 40.0}
 
 
-def _runner(tasks, stages) -> PipelineRunner:
-    r = PipelineRunner(task_service=tasks, db=FakeDB(), deps=object())
+def _runner(tasks, stages, deps=None) -> PipelineRunner:
+    r = PipelineRunner(task_service=tasks, db=FakeDB(), deps=deps or object())
     r._stage_funcs = stages  # 注入
     return r
 
@@ -114,6 +150,29 @@ def test_run_task_stage_failure_fails_task(monkeypatch):
     asyncio.run(_runner(tasks, {"parse": aparse}).run_task("t1"))
     fails = [c[1] for c in tasks.calls if isinstance(c, tuple) and c[0] == "fail"]
     assert fails and "彻底失败" in fails[0]
+
+
+def test_run_task_stage_failure_emits_pipeline_failed_audit(monkeypatch):
+    """F6(a):阶段异常除 structlog + task fail 外,追加 audit pipeline_failed
+    {stage, error}(带 report/task 关联)。"""
+    tasks = FakeTaskService()
+    monkeypatch.setattr(runner_mod, "STAGE_ORDER", ["parse", "normalize"])
+    factory = FakeAuditFactory()
+
+    async def aparse(ctx):
+        raise ValueError("解析彻底失败")
+
+    async def anormalize(ctx):
+        return {}
+
+    deps = FakeDeps(factory)
+    asyncio.run(_runner(tasks, {"parse": aparse, "normalize": anormalize}, deps).run_task("t1"))
+    fails = [c[1] for c in tasks.calls if isinstance(c, tuple) and c[0] == "fail"]
+    assert fails and "彻底失败" in fails[0]
+    assert [e.event_type for e in factory.events] == ["pipeline_failed"]
+    ev = factory.events[0]
+    assert ev.payload["stage"] == "parse" and "彻底失败" in ev.payload["error"]
+    assert ev.report_id == "r1" and ev.task_id == "t1"
 
 
 def test_recover_on_startup_reruns_running(monkeypatch):

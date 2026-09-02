@@ -46,6 +46,14 @@ class DataAccess:
             ])
             await s.commit()
 
+    async def delete_raw_items(self, report_id: str) -> None:
+        """F3: 报告级删旧 raw 行(parse 阶段重跑幂等:崩溃恢复/重跑不累积重复行)。"""
+        from sqlalchemy import delete
+
+        async with self._factory() as s:
+            await s.execute(delete(RawItem).where(RawItem.report_id == report_id))
+            await s.commit()
+
     async def get_raw_items(self, report_id: str) -> list[RawReportItem]:
         async with self._factory() as s:
             from sqlalchemy import select
@@ -72,6 +80,16 @@ class DataAccess:
                 )
                 for it in items
             ])
+            await s.commit()
+
+    async def delete_normalized(self, report_id: str) -> None:
+        """F3: 报告级删旧 normalized 行(normalize 阶段重跑幂等,spec §4.1 派生层重跑可执行)。"""
+        from sqlalchemy import delete
+
+        async with self._factory() as s:
+            await s.execute(
+                delete(NormalizedItemRow).where(NormalizedItemRow.report_id == report_id)
+            )
             await s.commit()
 
     async def get_normalized(self, report_id: str) -> list[NormalizedItem]:
@@ -115,12 +133,30 @@ class DataAccess:
             ))
             await s.commit()
 
+    async def delete_interpretation(self, task_id: str) -> None:
+        """F3: 按 task_id 删旧解读行 —— interpretations.task_id 唯一约束,plan 重跑幂等。"""
+        from sqlalchemy import delete
+
+        async with self._factory() as s:
+            await s.execute(
+                delete(InterpretationRow).where(InterpretationRow.task_id == task_id)
+            )
+            await s.commit()
+
     async def save_followup(self, report_id: str, task_id: str, doc: dict) -> None:
         async with self._factory() as s:
             s.add(FollowupPlanRow(
                 report_id=report_id, task_id=task_id, items=doc["items"],
                 degraded=doc.get("degraded", False),
             ))
+            await s.commit()
+
+    async def delete_followup(self, task_id: str) -> None:
+        """F3: 按 task_id 删旧复查单行(followup_plans.task_id 唯一约束,plan 重跑幂等)。"""
+        from sqlalchemy import delete
+
+        async with self._factory() as s:
+            await s.execute(delete(FollowupPlanRow).where(FollowupPlanRow.task_id == task_id))
             await s.commit()
 
     # ===== API 层使用 =====

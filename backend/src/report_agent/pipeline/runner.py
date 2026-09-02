@@ -23,6 +23,7 @@ class PipelineRunner:
         if task is None:
             return
         bind_context(task_id=task_id)
+        failed_stage = None
         try:
             report = await self._db.get_report(task.report_id)
             if report is None:
@@ -34,6 +35,7 @@ class PipelineRunner:
             for stage in STAGE_ORDER:
                 if stage in task.checkpoints:
                     continue
+                failed_stage = stage
                 fn = self._stage_funcs.get(stage)
                 if fn is None:
                     raise RuntimeError(f"阶段未注册: {stage}")
@@ -52,6 +54,15 @@ class PipelineRunner:
         except Exception as e:
             log.exception("pipeline_stage_error")
             await self._tasks.fail(task_id, str(e))
+            # F6(a): 失败已有 structlog,追加审计行 —— 解析失败/阶段崩溃可查(audit_events)
+            factory = getattr(self._deps, "session_factory", None)
+            if factory is not None:
+                from report_agent.guardrails.audit import AuditLog
+
+                audit = AuditLog(factory, defaults={"report_id": task.report_id,
+                                                    "task_id": task_id})
+                await audit.log("pipeline_failed",
+                                {"stage": failed_stage, "error": str(e)[:500]})
         finally:
             clear_context()
 

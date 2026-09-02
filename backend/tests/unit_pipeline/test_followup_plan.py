@@ -101,3 +101,37 @@ def test_build_followup_plan_all_normal_judgments_not_degraded():
     doc = asyncio.run(build_followup_plan([jn, ju], [], {"GLU": ctx}, FakeLLM(error=True)))
     assert doc.items == []
     assert doc.degraded is False
+
+
+def test_build_followup_plan_smooth_basis_diagnosis_falls_back_template():
+    """F1(b):润色 basis 含诊断用语 → BLOCK → 该条回退模板原文(LLM 内容不留)。"""
+    j_high = _judgment()
+    ctx = IndicatorContext(code="GLU", name="空腹血糖")
+    llm = FakeLLM(result={"0": "长期偏高可能患了糖尿病,建议门诊复查"})
+    doc = asyncio.run(build_followup_plan([j_high], [], {"GLU": ctx}, llm))
+    assert doc.degraded is True
+    assert doc.items[0].basis == "空腹血糖 判定升高,建议复查"
+    assert llm.calls  # 润色确实发生,只是输出被护栏拦下
+
+
+def test_build_followup_plan_smooth_basis_numeric_suspect_falls_back_template():
+    """F1(b):basis 不挂报告数值白名单 —— 润色文本出现数字 → SUSPECT 亦回退模板。"""
+    j_high = _judgment()
+    ctx = IndicatorContext(code="GLU", name="空腹血糖")
+    llm = FakeLLM(result={"0": "空腹血糖 9.9 mmol/L 偏高,建议门诊复查"})
+    doc = asyncio.run(build_followup_plan([j_high], [], {"GLU": ctx}, llm))
+    assert doc.degraded is True
+    assert doc.items[0].basis == "空腹血糖 判定升高,建议复查"
+
+
+def test_build_followup_plan_mixed_basis_fallback_only_violating_item():
+    """F1(b):逐条独立回退 —— 仅违规条目回模板,干净条目保留润色文本。"""
+    j1 = _judgment(code="GLU")
+    j2 = _judgment(code="ALT", value_num=80)
+    ctx1 = IndicatorContext(code="GLU", name="空腹血糖")
+    ctx2 = IndicatorContext(code="ALT", name="丙氨酸氨基转移酶")
+    llm = FakeLLM(result={"0": "您患有糖尿病,建议复查", "1": "转氨酶升高,建议择期复查肝功能"})
+    doc = asyncio.run(build_followup_plan([j1, j2], [], {"GLU": ctx1, "ALT": ctx2}, llm))
+    assert doc.degraded is True
+    assert doc.items[0].basis == "空腹血糖 判定升高,建议复查"  # 违规条 → 模板
+    assert doc.items[1].basis == "转氨酶升高,建议择期复查肝功能"  # 干净条 → 保留润色

@@ -1,0 +1,145 @@
+"""DataAccess 行写幂等回归(final review F3):sqlite+aiosqlite 内存库跑真 SQL。
+
+锁定语义:
+- parse/normalize 阶段重跑 = 报告级 delete-then-insert → 不累积重复行;
+- plan 阶段重跑 = task 级 delete-then-insert → 不撞 interpretations/followup_plans
+  的 task_id 唯一约束(修前第二次纯 insert 抛 IntegrityError → 任务永久 failed);
+- delete 只删目标 report/task 的行,不影响其他行。
+
+迁移一致性由 test_0001_migration_consistency.py 覆盖,这里只验证运行时行为。
+"""
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from report_agent.db import models
+from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
+from report_agent.pipeline.db_access import DataAccess
+from report_agent.pipeline.tasks import TaskService
+
+
+@pytest.fixture
+async def store():
+    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+    async with engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield DataAccess(factory), factory
+    await engine.dispose()
+
+
+async def _mk_report(da: DataAccess) -> str:
+    return await da.create_report("manual", None,
+                                  ReportMeta(source="manual", sex="male", age=40.0))
+
+
+def _raw(name: str, value_num: float | None) -> RawReportItem:
+    return RawReportItem(section="生化", name=name, value_text=str(value_num),
+                         value_num=value_num, unit="mmol/L", ref_range_text="3.9-6.1",
+                         abnormal_flag=None)
+
+
+def _norm(name: str, code: str | None) -> NormalizedItem:
+    return NormalizedItem(raw_index=0, section="生化", name=name, indicator_code=code,
+                          value_text="6.8", value_num=6.8, unit="mmol/L",
+                          raw_value_num=6.8, raw_unit="mmol/L", ref_range_text="3.9-6.1",
+                          range_from="report")
+
+
+async def _count(store_factory, model, *where) -> int:
+    async with store_factory() as s:
+        return (await s.execute(select(func.count()).select_from(model).where(*where))).scalar_one()
+
+
+async def test_parse_rerun_delete_then_insert_keeps_single_raw_batch(store):
+    """F3:parse 重跑(delete_raw_items + save_raw_items × 2)→ 单批行,不累积。"""
+    da, _ = store
+    rid = await _mk_report(da)
+    rows = [_raw("空腹血糖", 6.8), _raw("白细胞", 5.2)]
+    for _ in range(2):
+        await da.delete_raw_items(rid)
+        await da.save_raw_items(rid, rows)
+    assert len(await da.get_raw_items(rid)) == len(rows)
+
+
+async def test_normalize_rerun_delete_then_insert_keeps_single_batch(store):
+    """F3:normalize 重跑(delete_normalized + save_normalized × 2)→ 单批行。"""
+    da, _ = store
+    rid = await _mk_report(da)
+    rows = [_norm("空腹血糖", "GLU"), _norm("未知项", None)]
+    for _ in range(2):
+        await da.delete_normalized(rid)
+        await da.save_normalized(rid, rows)
+    assert len(await da.get_normalized(rid)) == len(rows)
+
+
+async def test_delete_scoped_to_target_report(store):
+    """F3:delete 按 report_id 过滤,不影响其他报告的 raw/normalized 行。"""
+    da, _ = store
+    r1, r2 = await _mk_report(da), await _mk_report(da)
+    await da.save_raw_items(r1, [_raw("A", 1.0)])
+    await da.save_raw_items(r2, [_raw("B", 2.0)])
+    await da.save_normalized(r1, [_norm("A", "A1")])
+    await da.save_normalized(r2, [_norm("B", "B1")])
+    await da.delete_raw_items(r1)
+    await da.delete_normalized(r1)
+    assert await da.get_raw_items(r1) == []
+    assert await da.get_raw_items(r2)  # 其他报告行不受影响
+    assert await da.get_normalized(r1) == []
+    assert await da.get_normalized(r2)
+
+
+async def test_plan_rerun_without_delete_collides_on_task_unique(store):
+    """F3 崩溃窗口复现:plan 重跑未删旧行 → 第二次 save_interpretation 撞 task_id 唯一
+    约束(IntegrityError)→ 这正是修复前"任务永久 failed"的根因。"""
+    da, factory = store
+    rid = await _mk_report(da)
+    task = await TaskService(factory).create(rid)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d"}
+    await da.save_interpretation(rid, task.id, doc)
+    with pytest.raises(IntegrityError):
+        await da.save_interpretation(rid, task.id, doc)
+
+
+async def test_plan_rerun_delete_then_insert_single_rows(store):
+    """F3:plan 重跑 = 按 task_id 删旧解读/复查行后插入 → 不再抛错,每 task 各一行。"""
+    da, factory = store
+    rid = await _mk_report(da)
+    task = await TaskService(factory).create(rid)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d"}
+    for _ in range(2):
+        await da.delete_interpretation(task.id)
+        await da.save_interpretation(rid, task.id, doc)
+    for _ in range(2):
+        await da.delete_followup(task.id)
+        await da.save_followup(rid, task.id, {"items": [], "degraded": True})
+    assert await _count(factory, models.InterpretationRow,
+                        models.InterpretationRow.task_id == task.id) == 1
+    assert await _count(factory, models.FollowupPlanRow,
+                        models.FollowupPlanRow.task_id == task.id) == 1
+
+
+async def test_plan_delete_scoped_to_task_keeps_other_task_rows(store):
+    """F3:delete_interpretation/delete_followup 按 task_id 过滤 —— 同报告先后两个任务
+    (新任务重跑)只删自己的旧行,不影响其他任务已落库的解读/复查单。"""
+    da, factory = store
+    rid = await _mk_report(da)
+    svc = TaskService(factory)
+    t1 = await svc.create(rid)
+    t2 = await svc.create(rid)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d"}
+    for t in (t1, t2):
+        await da.save_interpretation(rid, t.id, doc)
+        await da.save_followup(rid, t.id, {"items": [], "degraded": False})
+    await da.delete_interpretation(t1.id)
+    await da.delete_followup(t1.id)
+    assert await _count(factory, models.InterpretationRow,
+                        models.InterpretationRow.task_id == t1.id) == 0
+    assert await _count(factory, models.InterpretationRow,
+                        models.InterpretationRow.task_id == t2.id) == 1
+    assert await _count(factory, models.FollowupPlanRow,
+                        models.FollowupPlanRow.task_id == t1.id) == 0
+    assert await _count(factory, models.FollowupPlanRow,
+                        models.FollowupPlanRow.task_id == t2.id) == 1

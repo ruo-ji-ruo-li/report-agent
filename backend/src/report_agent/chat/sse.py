@@ -13,6 +13,7 @@ import json
 
 from langchain_core.messages import HumanMessage
 
+from report_agent.chat.tools import REFUSAL_TEXT
 from report_agent.guardrails.audit import AuditLog
 from report_agent.guardrails.reviewer import review_output
 from report_agent.guardrails.rules import GuardrailContext, GuardrailResult, Verdict, rule_guardrail
@@ -60,9 +61,15 @@ async def sse_stream(graph, deps, session_id: str, user_message: str, report_id:
     full_text = ""
     tool_calls: list[dict] = []
     evidence: list[str] = []
+    audit = AuditLog(deps.session_factory)
+    tool_inputs: dict[str, dict] = {}  # run_id → 工具入参(拒答审计取 query 用)
     try:
         async for ev in graph.astream_events(
-            {"messages": [HumanMessage(content=user_message)]}, config=config, version="v2"
+            # F4: 显式带 tool_rounds=0 —— LangGraph checkpointer 按 thread_id 记忆 state,
+            # 缺省会继承上轮值使轮数跨提问会话级累计,8 轮后该会话永久丧失工具;
+            # messages 仍走 add_messages 追加历史,每次提问的轮数预算独立重置
+            {"messages": [HumanMessage(content=user_message)], "tool_rounds": 0},
+            config=config, version="v2",
         ):
             kind = ev.get("event")
             if kind == "on_chat_model_stream":
@@ -73,13 +80,25 @@ async def sse_stream(graph, deps, session_id: str, user_message: str, report_id:
             elif kind == "on_tool_start":
                 name = ev.get("name")
                 tool_calls.append({"name": name, "args_summary": _args_summary(ev)})
+                rid = ev.get("run_id")
+                if rid is not None:
+                    tool_inputs[str(rid)] = (ev.get("data") or {}).get("input") or {}
                 yield {"event": "tool_call", "data": {"name": name, "status": "start"}}
             elif kind == "on_tool_end":
                 name = ev.get("name")
                 yield {"event": "tool_call", "data": {"name": name, "status": "end"}}
                 if name == EVIDENCE_TOOL:
                     output = _tool_output_text(ev)
-                    if EVIDENCE_MARK in output:  # 空检索拒答文本不构成证据,不发事件
+                    if output == REFUSAL_TEXT:
+                        # F6(d): 拒答(空结果或 RRF 得分低于阈值)也是受控输出 → 审计
+                        args = {}
+                        rid = ev.get("run_id")
+                        if rid is not None:
+                            args = tool_inputs.get(str(rid), {})
+                        query = args.get("query") if isinstance(args.get("query"), str) else str(args)
+                        await audit.log("chat_refusal", {"query": query[:200]},
+                                        session_id=session_id)
+                    elif EVIDENCE_MARK in output:  # 空检索拒答文本不构成证据,不发事件
                         evidence.append(output)
                         yield {"event": "evidence", "data": output}
     except Exception as e:  # noqa: BLE001
@@ -97,7 +116,6 @@ async def sse_stream(graph, deps, session_id: str, user_message: str, report_id:
         if detail["meta"].get("age") is not None:
             allowed.append(float(detail["meta"]["age"]))
     gctx = GuardrailContext(allowed_numbers=allowed, require_disclaimer=False)
-    audit = AuditLog(deps.session_factory)
     result = rule_guardrail(full_text, gctx)
     guardrail_flags = result.findings
     if result.verdict == Verdict.SUSPECT:
