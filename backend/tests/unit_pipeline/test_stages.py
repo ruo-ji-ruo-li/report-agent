@@ -1,25 +1,39 @@
-"""parse/normalize/compare 三阶段单测:FakeDB/FakeKG/FakeNormalizer,零 DB/零网络。
+"""parse/normalize/compare/retrieve/generate/plan 六阶段单测:FakeDB/FakeKG/FakeNormalizer,
+零 DB/零网络。retrieve/generate/plan 由 Task 12 追加注册。
 
-锁定语义(brief 质量注意):
+锁定语义(brief):
 - parse_stage: manual 直通校验;非 manual needs_meta=sex/age 缺失 → 暂停信号;不支持来源 ValueError
 - normalize_stage: 换算后标准值入库但 raw 原值(raw_value_num/raw_unit)不丢
 - compare_stage: sex/age 缺失抛 ValueError 引导补录;payload n_abnormal/critical_count/matched_patterns
+- retrieve_stage: 逐异常项并发检索;空结果 → placeholder 证据;Evidence 8 键 JSON 化
+- generate_stage: 逐项解读(LLM 失败回退模板)+ 总评 + 四段式 doc;整体不因 LLM 失败而抛
+- plan_stage: 复查计划落库;LLM 润色失败 → degraded 合并进解读 doc;组合模式条目以模式名产出
 """
 import asyncio
 from types import SimpleNamespace
 
 import pytest
 
-from report_agent.knowledge.kg_client import PatternCriterion, PatternSpec, RangeSpec
+from report_agent.knowledge.kg_client import (
+    IndicatorContext,
+    PatternCriterion,
+    PatternSpec,
+    RangeSpec,
+)
+from report_agent.llm.client import LLMError
 from report_agent.parsing.parse_report import ParseOutput
 from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
 from report_agent.pipeline import stages as stages_mod
 from report_agent.pipeline.stages import (
     StageContext,
     compare_stage,
+    generate_stage,
     normalize_stage,
     parse_stage,
+    plan_stage,
+    retrieve_stage,
 )
+from report_agent.retrieval.hybrid import Evidence
 
 
 class FakeDB:
@@ -32,6 +46,8 @@ class FakeDB:
         self.saved_raw = None
         self.saved_norm = None
         self.applied = None
+        self.saved_interpretation = None
+        self.saved_followup = None
 
     async def get_raw_items(self, report_id):
         return self.raw_items
@@ -51,11 +67,18 @@ class FakeDB:
     async def apply_judgments(self, report_id, judgments):
         self.applied = judgments
 
+    async def save_interpretation(self, report_id, task_id, doc):
+        self.saved_interpretation = doc
+
+    async def save_followup(self, report_id, task_id, doc):
+        self.saved_followup = doc
+
 
 class FakeKG:
-    def __init__(self, specs=None, patterns=None):
+    def __init__(self, specs=None, patterns=None, contexts=None):
         self.specs = specs or {}
         self.patterns = patterns or []
+        self.contexts = contexts or {}
         self.range_calls: list[str] = []
 
     def range_specs(self, code):
@@ -64,6 +87,31 @@ class FakeKG:
 
     def all_patterns(self):
         return self.patterns
+
+    def indicator_context(self, code):
+        return self.contexts.get(code, IndicatorContext(code=code, name=code))
+
+
+class FakeLLM:
+    """interpret_item/smooth_basis 走 complete_json,generate_summary 走 chat。"""
+
+    def __init__(self, json_result=None, text_result="", error=False):
+        self.json_result = json_result
+        self.text_result = text_result
+        self.error = error
+        self.calls = []
+
+    async def complete_json(self, messages, retry_feedback=True):
+        self.calls.append(("json", messages))
+        if self.error:
+            raise LLMError("down")
+        return self.json_result
+
+    async def chat(self, messages, temperature=0.1, **kw):
+        self.calls.append(("chat", messages))
+        if self.error:
+            raise LLMError("down")
+        return self.text_result
 
 
 class FakeNormalizer:
@@ -289,7 +337,160 @@ def test_compare_stage_reports_matched_patterns():
 # ---------------- 注册表 ----------------
 
 def test_stage_registry_and_order():
-    assert set(stages_mod.STAGE_FUNCS) == {"parse", "normalize", "compare"}
+    assert set(stages_mod.STAGE_FUNCS) == {
+        "parse", "normalize", "compare", "retrieve", "generate", "plan",
+    }
     assert stages_mod.STAGE_ORDER == [
         "parse", "normalize", "compare", "retrieve", "generate", "guardrail", "plan",
     ]
+
+
+# ---------------- retrieve / generate / plan(Task 12)----------------
+
+def _jdict(code="GLU", name="空腹血糖", status="high", value_num=7.2, critical=False) -> dict:
+    return {"indicator_code": code, "name": name, "value_num": value_num, "value_text": None,
+            "unit": "mmol/L", "status": status, "ref_low": 3.9, "ref_high": 6.1,
+            "critical": critical, "range_source": "report"}
+
+
+def _compare_checkpoint(judgments, matched=None) -> dict:
+    return {"n_abnormal": 1, "critical_count": 0, "matched_patterns": matched or [],
+            "judgments": judgments}
+
+
+class FakeRetriever:
+    def __init__(self, out=None):
+        self.out = out or []
+        self.queries = []
+
+    async def search(self, q):
+        self.queries.append(q)
+        return list(self.out)
+
+
+def test_retrieve_stage_payload_placeholder_when_no_hits():
+    judgments = [
+        _jdict(code="GLU", status="high"),
+        _jdict(code="CA", name="血钙", status="low", value_num=2.0),
+        _jdict(code="WBC", name="白细胞", status="normal", value_num=5.2),
+    ]
+    retriever = FakeRetriever()
+    deps = SimpleNamespace(
+        settings=SimpleNamespace(retrieve_concurrency=2), retriever=retriever)
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": _compare_checkpoint(judgments)}, deps=deps)
+    payload = asyncio.run(retrieve_stage(ctx))
+    assert set(payload["evidence"]) == {"GLU", "CA"}  # normal 项不检索
+    for key in ("GLU", "CA"):
+        assert len(payload["evidence"][key]) == 1
+        assert payload["evidence"][key][0]["source"] == "placeholder"
+        assert set(payload["evidence"][key][0]) == {
+            "text", "source", "entity_type", "entity_id", "title",
+            "score", "rrf_score", "rrf_sources",
+        }
+    assert [(q.text, q.direction) for q in retriever.queries] == [
+        ("空腹血糖 high 健康风险", "high"), ("血钙 low 健康风险", "low"),
+    ]
+
+
+def test_retrieve_stage_keeps_real_evidence_dict():
+    retriever = FakeRetriever(out=[Evidence(text="血糖升高可能提示:糖尿病风险", source="kg",
+                                            entity_type="indicator", entity_id="GLU",
+                                            title="空腹血糖 知识图谱", score=None,
+                                            rrf_score=0.0833, rrf_sources=["kg"])])
+    deps = SimpleNamespace(settings=SimpleNamespace(retrieve_concurrency=2), retriever=retriever)
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": _compare_checkpoint([_jdict()])}, deps=deps)
+    payload = asyncio.run(retrieve_stage(ctx))
+    ev = payload["evidence"]["GLU"][0]
+    assert ev["source"] == "kg" and ev["rrf_score"] == 0.0833
+    assert ev["rrf_sources"] == ["kg"] and ev["title"] == "空腹血糖 知识图谱"
+
+
+def _glu_json() -> dict:
+    return {"meaning": "血糖偏高", "risks": ["糖尿病风险"], "advice_level": "recheck",
+            "advice": "复查空腹血糖", "evidence_ids": []}
+
+
+def _glu_evidence() -> dict:
+    return {"text": "血糖升高可能提示:糖尿病风险", "source": "kg", "entity_type": "indicator",
+            "entity_id": "GLU", "title": "空腹血糖 知识图谱", "score": None,
+            "rrf_score": 0.0833, "rrf_sources": ["kg"]}
+
+
+def test_generate_stage_assembles_doc_with_evidence_and_summary():
+    judgments = [_jdict(), _jdict(code="XX", name="未知项", status="unknown", value_num=None)]
+    kg = FakeKG(contexts={"GLU": IndicatorContext(code="GLU", name="空腹血糖")})
+    llm = FakeLLM(json_result=_glu_json(), text_result=" 总体结论,请综合评估。 ")
+    deps = SimpleNamespace(kg=kg, llms=SimpleNamespace(chat=llm))
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={
+                           "compare": _compare_checkpoint(judgments),
+                           "retrieve": {"evidence": {"GLU": [_glu_evidence()]}},
+                       }, deps=deps)
+    payload = asyncio.run(generate_stage(ctx))
+    doc = payload["doc"]
+    assert doc["degraded"] is False
+    assert doc["summary"] == "总体结论,请综合评估。"
+    assert doc["disclaimer"] and doc["items"][0]["name"] == "空腹血糖"
+    assert doc["items"][0]["advice_level"] == "recheck"
+    assert payload["interpretations"][0]["status"] == "high"
+    # 调用序:先逐项 complete_json,后总评 chat;prompt 内含 KG 事实与 Evidence 文本
+    assert [c[0] for c in llm.calls] == ["json", "chat"]
+    content = llm.calls[0][1][0]["content"]
+    assert "知识图谱事实" in content and "空腹血糖 知识图谱" in content
+
+
+def test_generate_stage_llm_error_uses_fallbacks_no_raise():
+    judgments = [_jdict()]
+    kg = FakeKG()
+    llm = FakeLLM(error=True)
+    deps = SimpleNamespace(kg=kg, llms=SimpleNamespace(chat=llm))
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": _compare_checkpoint(judgments)}, deps=deps)
+    payload = asyncio.run(generate_stage(ctx))  # 不抛:逐项与总评各自降级
+    doc = payload["doc"]
+    assert "线下咨询" in doc["items"][0]["advice"]  # 模板解读
+    assert "项异常" in doc["summary"]  # template_summary
+    assert doc["degraded"] is False  # generate 内部降级不置 doc.degraded(guardrail 管)
+
+
+def test_plan_stage_persists_and_merges_degraded():
+    judgments = [
+        _jdict(status="critical_high", value_num=25, critical=True),
+        _jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80),
+    ]
+    compare = _compare_checkpoint(judgments, matched=[("代谢异常模式", ["丙氨酸氨基转移酶"])])
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(error=True)  # 润色失败 → 模板原文回退
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
+                       deps=deps)
+    payload = asyncio.run(plan_stage(ctx))
+    assert payload == {"n_items": 3, "degraded": True}
+    items = db.saved_followup["items"]
+    assert items[0]["timeframe"] == "立即"  # 危急置顶
+    assert items[2]["item"] == "组合模式复查:代谢异常模式"  # 模式条目以名称为载体
+    assert "丙氨酸氨基转移酶" in items[2]["basis"]
+    assert db.saved_followup["degraded"] is True
+    assert db.saved_interpretation["degraded"] is True  # plan.degraded 并入解读 doc
+
+
+def test_plan_stage_persists_non_degraded_with_guardrail_off():
+    judgments = [_jdict(code="ALT", name="丙氨酸氨基转移酶", status="high", value_num=80)]
+    compare = _compare_checkpoint(judgments)
+    doc = {"summary": "s", "items": [], "advice_summary": "a", "disclaimer": "d",
+           "degraded": False}
+    llm = FakeLLM(json_result={"0": "转氨酶升高,建议择期复查肝功能"})
+    deps = SimpleNamespace(kg=FakeKG(), llms=SimpleNamespace(chat=llm))
+    db = FakeDB()
+    ctx = StageContext(task_id="t1", report={"id": "r1"},
+                       checkpoints={"compare": compare, "generate": {"doc": doc}}, db=db,
+                       deps=deps)
+    payload = asyncio.run(plan_stage(ctx))
+    assert payload == {"n_items": 1, "degraded": False}
+    assert db.saved_followup["items"][0]["basis"] == "转氨酶升高,建议择期复查肝功能"
+    assert db.saved_interpretation["degraded"] is False
