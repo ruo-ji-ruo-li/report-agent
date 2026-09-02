@@ -187,6 +187,106 @@ async def generate_stage(ctx: StageContext) -> dict:
     ]}
 
 
+@register("guardrail")
+async def guardrail_stage(ctx: StageContext) -> dict:
+    """对生成产物执行护栏:总评 + 逐项解读逐一过检,重生成/降级由 enforce 闭环。"""
+    from report_agent.guardrails.audit import AuditLog
+    from report_agent.guardrails.enforce import enforce_guardrail
+    from report_agent.guardrails.rules import GuardrailContext
+    from report_agent.pipeline.interpret import build_degraded_interpretation
+    from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
+
+    doc = dict(ctx.checkpoints.get("generate", {}).get("doc", {}))
+    judgments = [
+        ItemJudgment(indicator_code=j["indicator_code"], name=j["name"], value_num=j["value_num"],
+                     value_text=j["value_text"], unit=j["unit"], status=ItemStatus(j["status"]),
+                     ref_low=j["ref_low"], ref_high=j["ref_high"], critical=j["critical"],
+                     range_source=j["range_source"])
+        for j in ctx.checkpoints.get("compare", {}).get("judgments", [])
+    ]
+    allowed = []
+    for j in judgments:
+        allowed.extend([x for x in (j.value_num, j.ref_low, j.ref_high) if x is not None])
+    report = ctx.report
+    if report.get("age") is not None:
+        allowed.append(float(report["age"]))
+    has_critical = any(j["critical"] for j in
+                       ctx.checkpoints.get("compare", {}).get("judgments", []))
+    gctx = GuardrailContext(allowed_numbers=allowed, require_disclaimer=True,
+                            require_critical_warning=has_critical)
+    audit = AuditLog(ctx.deps.session_factory)
+    final_doc = dict(doc)
+    degraded = False
+    findings_all = []
+
+    # 1) 总评
+    async def regen_summary(feedback):
+        from report_agent.pipeline.interpret import generate_summary
+
+        items = doc.get("items", [])
+        matched = [m[0] for m in ctx.checkpoints.get("compare", {}).get("matched_patterns", [])]
+        unknown = sum(1 for j in ctx.checkpoints.get("compare", {}).get("judgments", [])
+                      if j["status"] == "unknown")
+        return await generate_summary(items, matched, unknown, ctx.deps.llms.chat)
+
+    async def degrade_summary():
+        return build_degraded_interpretation(judgments)["summary"]
+
+    summary, sum_degraded = await enforce_guardrail(
+        doc.get("summary", ""), gctx, regen_summary, degrade_summary,
+        ctx.deps.llms.chat, audit,
+    )
+    final_doc["summary"] = summary
+    degraded = degraded or sum_degraded
+    findings_all.append({"part": "summary", "degraded": sum_degraded})
+
+    # 2) 逐项解读(meaning+advice 合并检)
+    new_items = []
+    for item in doc.get("items", []):
+        text = f"{item['meaning']}\n建议:{item['advice']}"
+
+        async def regen_item(feedback, item=item):
+            # 单项重生成:重跑 interpret_item(证据在 retrieve checkpoint)
+            from report_agent.pipeline.interpret import interpret_item
+            from report_agent.retrieval.hybrid import Evidence
+
+            key = item["indicator_code"] or item["name"]
+            evs = [Evidence(**e) for e in
+                   ctx.checkpoints.get("retrieve", {}).get("evidence", {}).get(key, [])]
+            j0 = next(j for j in ctx.checkpoints.get("compare", {}).get("judgments", [])
+                      if (j["indicator_code"] or j["name"]) == key)
+            jj = ItemJudgment(indicator_code=j0["indicator_code"], name=j0["name"],
+                              value_num=j0["value_num"], value_text=j0["value_text"],
+                              unit=j0["unit"], status=ItemStatus(j0["status"]),
+                              ref_low=j0["ref_low"], ref_high=j0["ref_high"],
+                              critical=j0["critical"], range_source=j0["range_source"])
+            kctx = ctx.deps.kg.indicator_context(key) if j0["indicator_code"] else None
+            new_i = await interpret_item(jj, kctx, evs, ctx.deps.llms.chat)
+            return f"{new_i.meaning}\n建议:{new_i.advice}"
+
+        async def degrade_item():
+            # degrade 在本次迭代内同步调用(下一轮 for 才重绑 item),闭包引用安全
+            return f"{item['name']}检测结果请以线下医师意见为准。"  # noqa: B023
+
+        new_text, item_degraded = await enforce_guardrail(
+            text, gctx, regen_item, degrade_item, ctx.deps.llms.chat, audit,
+        )
+        if item_degraded or (new_text != text):
+            parts = new_text.split("\n建议:", 1)
+            item["meaning"] = parts[0]
+            if len(parts) > 1:
+                item["advice"] = parts[1]
+        degraded = degraded or item_degraded
+        findings_all.append({"part": item["name"], "degraded": item_degraded})
+        new_items.append(item)
+
+    final_doc["items"] = new_items
+    final_doc["degraded"] = degraded
+    if degraded:
+        final_doc["advice_summary"] = "所有异常项请以线下医师意见为准。"
+    return {"doc": final_doc, "degraded": degraded, "findings": findings_all}
+
+
 @register("plan")
 async def plan_stage(ctx: StageContext) -> dict:
     """复查计划生成 + 落库解读与复查单。"""

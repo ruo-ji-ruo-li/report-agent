@@ -339,7 +339,7 @@ def test_compare_stage_reports_matched_patterns():
 
 def test_stage_registry_and_order():
     assert set(stages_mod.STAGE_FUNCS) == {
-        "parse", "normalize", "compare", "retrieve", "generate", "plan",
+        "parse", "normalize", "compare", "retrieve", "generate", "guardrail", "plan",
     }
     assert stages_mod.STAGE_ORDER == [
         "parse", "normalize", "compare", "retrieve", "generate", "guardrail", "plan",
