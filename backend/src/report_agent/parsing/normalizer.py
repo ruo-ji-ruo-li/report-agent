@@ -75,6 +75,9 @@ async def map_unknown_names(
     ]
     try:
         result = await llm.complete_json(messages)
+        if not isinstance(result, dict):
+            log.warning("alias_map_llm_bad_shape", shape=type(result).__name__)
+            return {n: None for n in names}
         return {k: (v if v in {e.code for e in entries} else None) for k, v in result.items()}
     except LLMError as e:
         log.warning("alias_map_llm_failed", error=str(e))

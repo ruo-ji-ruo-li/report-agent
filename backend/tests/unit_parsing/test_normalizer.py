@@ -72,3 +72,15 @@ def test_normalize_llm_map_fallback_keeps_unknown():
                           unit=None, ref_range_text=None, abnormal_flag=None)]
     out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
     assert out[0].indicator_code is None  # LLM 挂 → 规则兜底 unknown
+
+
+def test_normalize_llm_non_dict_json_treated_as_failure():
+    class FakeLLM:
+        async def complete_json(self, messages, retry_feedback=True):
+            return []  # 合法 JSON 但非 dict → 视同失败,不得冒泡 AttributeError
+
+    n = Normalizer(ENTRIES)
+    raws = [RawReportItem(section=None, name="神秘指标X", value_text="1", value_num=1.0,
+                          unit=None, ref_range_text=None, abnormal_flag=None)]
+    out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
+    assert out[0].indicator_code is None  # 非 dict → unknown 保留继续
