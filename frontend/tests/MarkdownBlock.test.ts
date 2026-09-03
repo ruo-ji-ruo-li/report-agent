@@ -1,6 +1,6 @@
 // tests/MarkdownBlock.test.ts
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownBlock from '../src/components/MarkdownBlock.vue'
 
@@ -22,5 +22,18 @@ describe('MarkdownBlock(spec-f §8.5)', () => {
   it('空文本渲染空容器', () => {
     const w = mount(MarkdownBlock, { props: { text: '' } })
     expect(w.find('.md').exists()).toBe(true)
+  })
+
+  it('流式更新 80ms 窗内至少渲染一次,不饿死到流末', async () => {
+    vi.useFakeTimers()
+    const w = mount(MarkdownBlock, { props: { text: '' } })
+    await w.setProps({ text: 'a' })
+    await vi.advanceTimersByTimeAsync(20)
+    await w.setProps({ text: 'ab' })
+    await vi.advanceTimersByTimeAsync(20)
+    await w.setProps({ text: 'abc' })
+    await vi.advanceTimersByTimeAsync(60) // 距首改 100ms > 80ms 窗
+    expect(w.find('.md').html()).toContain('abc')
+    vi.useRealTimers()
   })
 })

@@ -1,6 +1,6 @@
 <!-- src/components/MarkdownBlock.vue -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
@@ -9,16 +9,22 @@ const props = defineProps<{ text: string }>()
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const html = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
+let lastRender = 0
 
 function render() {
   html.value = DOMPurify.sanitize(md.render(props.text || ''))
+  lastRender = Date.now()
 }
 
-// 流式场景 80ms 节流;静态文本仅首帧一次(spec-f §8.5)
+// 流式更新:80ms 窗内至多渲染一次(窗式节流,不饿死),静默后 80ms 收尾
 render()
 watch(() => props.text, () => {
-  if (timer) clearTimeout(timer)
-  timer = setTimeout(render, 80)
+  if (timer) return
+  const wait = Math.max(0, 80 - (Date.now() - lastRender))
+  timer = setTimeout(() => {
+    timer = null
+    render()
+  }, wait)
 })
 
 defineExpose({ render })
