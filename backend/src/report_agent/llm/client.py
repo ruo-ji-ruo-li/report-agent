@@ -90,12 +90,19 @@ class DeepSeekClient:
         log.info("llm_call", model=self.model, purpose="chat_stream",
                  seconds=round(time.perf_counter() - t0, 2))
 
-    async def complete_json(self, messages: list[dict], retry_feedback: bool = True) -> dict:
-        """要求 JSON 输出;解析失败时带反馈重试一次。"""
+    async def complete_json(
+        self, messages: list[dict], retry_feedback: bool = True, max_tokens: int = 4096
+    ) -> dict:
+        """要求 JSON 输出;解析失败时带反馈重试一次。
+
+        max_tokens 默认 4096 而非 chat 的 2048:完整 JSON 文档(视觉解析/评测集合成的
+        15 项报告)在 2048 预算下会被截断——截断必非合法 JSON,且重试同参数必再截断,
+        反馈重试机制失效(真实生成评测集时 r09/r17 均因此失败)。
+        """
         for i in range(2):
-            raw = await self.chat(messages, temperature=0.1)
+            raw = await self.chat(messages, temperature=0.1, max_tokens=max_tokens)
             try:
-                return json.loads(raw)
+                return json.loads(_strip_json_fence(raw))
             except json.JSONDecodeError:
                 if not retry_feedback or i == 1:
                     raise LLMError(f"LLM 未返回合法 JSON: {raw[:200]}")
@@ -104,6 +111,16 @@ class DeepSeekClient:
                     {"role": "user", "content": "你的输出不是合法 JSON,请重新只输出 JSON。"},
                 ]
         raise LLMError("unreachable")
+
+
+def _strip_json_fence(raw: str) -> str:
+    """剥 markdown 代码围栏(```json ... ```),模型偶发带围栏输出 JSON。"""
+    s = raw.strip()
+    if s.startswith("```") and s.endswith("```"):
+        first_newline = s.find("\n")
+        if first_newline != -1:
+            return s[first_newline + 1 : -3].strip()
+    return s
 
 
 @dataclass
