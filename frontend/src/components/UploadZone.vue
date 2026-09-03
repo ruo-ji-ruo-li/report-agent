@@ -12,6 +12,7 @@ function sourceOf(file: File): 'pdf' | 'photo' {
 }
 
 async function handleFile(file: File) {
+  if (uploading.value) return // 在途守卫:上传中忽略再拖入/选择,防并发双 POST(fix round 1)
   uploading.value = true
   errorMessage.value = ''
   try {
