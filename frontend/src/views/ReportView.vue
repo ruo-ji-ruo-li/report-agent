@@ -127,7 +127,7 @@ onBeforeUnmount(() => poller.stop())
         <el-tab-pane label="复查计划" name="followup">
           <FollowupList v-if="followup" :doc="followup" />
         </el-tab-pane>
-        <el-tab-pane label="追问" name="chat">
+        <el-tab-pane label="追问" name="chat" lazy>
           <ChatPanel :report-id="reportId" />
         </el-tab-pane>
       </el-tabs>
