@@ -27,6 +27,18 @@ describe('SSEFrameParser', () => {
     const p = new SSEFrameParser()
     expect(p.push('event: tool_call\ndata: {"name":"a","status":"start"}\n\nevent: token\ndata: 好\n\n').length).toBe(2)
   })
+
+  it('CRLF 整帧也能解析(sse_starlette 默认 \\r\\n 分隔)', () => {
+    const p = new SSEFrameParser()
+    expect(p.push('event: token\r\ndata: 你好\r\n\r\n'))
+      .toEqual([{ event: 'token', data: '你好' }])
+  })
+
+  it('CRLF 跨块不残留 \\r', () => {
+    const p = new SSEFrameParser()
+    expect(p.push('event: token\r\ndata: 你好\r')).toEqual([])
+    expect(p.push('\n\r\n')).toEqual([{ event: 'token', data: '你好' }])
+  })
 })
 
 describe('decodeChatEvent', () => {

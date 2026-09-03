@@ -11,6 +11,9 @@ export class SSEFrameParser {
 
   push(chunk: string): RawSSEEvent[] {
     this.buf += chunk
+    // CRLF→LF 归一需在整块缓冲上进行:CRLF 若被块边界劈开(chunk 以 \r 结尾、下块以 \n 开头),
+    // 逐 chunk 归一会残留孤儿 \r。缓冲每帧即排空,整块重归一幂等且开销可忽略。
+    this.buf = this.buf.replace(/\r\n/g, '\n')
     const out: RawSSEEvent[] = []
     let idx: number
     while ((idx = this.buf.indexOf('\n\n')) !== -1) {
