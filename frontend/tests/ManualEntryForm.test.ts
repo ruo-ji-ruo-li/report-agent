@@ -19,7 +19,7 @@ describe('ManualEntryForm', () => {
   })
 
   it('填一条后提交成功并派发 uploaded', async () => {
-    vi.spyOn(api, 'createReportManual').mockResolvedValue({ report_id: 'r9', task_id: 't9' })
+    const spy = vi.spyOn(api, 'createReportManual').mockResolvedValue({ report_id: 'r9', task_id: 't9' })
     const w = mount(ManualEntryForm, globalOpts)
     const vm = w.vm as unknown as {
       rows: { name: string }[]; sex: string; age: number | null
@@ -30,6 +30,12 @@ describe('ManualEntryForm', () => {
     vm.age = 35
     await vm.submit()
     await flushPromises()
+    // 载荷归一契约:空名行被过滤、meta ''→null、sex/age 随 ref 透传
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0][0]).toEqual({
+      meta: { sex: '男', age: 35, institution: null, report_date: null },
+      items: [{ name: '丙氨酸氨基转移酶' }],
+    })
     expect(w.emitted('uploaded')![0]).toEqual([{ reportId: 'r9', taskId: 't9', source: 'manual' }])
   })
 })
