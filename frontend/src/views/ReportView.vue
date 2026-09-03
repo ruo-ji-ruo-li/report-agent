@@ -24,6 +24,7 @@ const taskInfo = ref<Awaited<ReturnType<typeof getTask>> | null>(null)
 const interp = ref<InterpretationDoc | null>(null)
 const followup = ref<FollowupPlanDoc | null>(null)
 const docError = ref<string | null>(null)
+const detailError = ref(false) // 详情加载失败(404/网络)→ 渲染错误块而非白屏(fix round 2)
 const activeTab = ref('interp')
 
 const terminal = computed(() =>
@@ -31,6 +32,17 @@ const terminal = computed(() =>
 )
 
 const poller = createTaskPoller(getTask)
+
+// 序号守卫:轮询回调的在途 getReport 返回时若已有更新序号,旧快照作废不覆写(fix round 2)
+let loadSeq = 0
+
+/** 拉取详情快照并仅在无更新序号时写入 detail(防慢 tick 旧快照覆写冻结) */
+async function refreshDetail() {
+  const n = ++loadSeq
+  const d = await getReport(reportId)
+  if (n === loadSeq) detail.value = d
+  return d
+}
 
 function updateRecent() {
   if (!detail.value) return
@@ -52,7 +64,9 @@ async function fetchDoc<T>(fn: () => Promise<T>): Promise<T | null> {
         await new Promise(r => setTimeout(r, 1000))
         continue
       }
-      throw e
+      // 5xx/网络:不冒泡,落 docError 文案(§11 降级不崩溃,fix round 2)
+      docError.value = '解读服务暂不可用,稍后刷新页面再试。'
+      return null
     }
   }
   docError.value = '解读尚未生成,稍后刷新页面再试。'
@@ -67,15 +81,20 @@ async function loadDocs() {
 async function startPolling() {
   if (!detail.value?.task) return
   poller.start(detail.value.task.id, {
-    onUpdate: async info => { taskInfo.value = info; detail.value = await getReport(reportId) },
-    onAwaitingMeta: async info => { taskInfo.value = info; detail.value = await getReport(reportId) },
-    onDone: async () => { detail.value = await getReport(reportId); updateRecent(); await loadDocs() },
-    onFailed: async info => { taskInfo.value = info; detail.value = await getReport(reportId) },
+    onUpdate: async info => { taskInfo.value = info; await refreshDetail() },
+    onAwaitingMeta: async info => { taskInfo.value = info; await refreshDetail() },
+    onDone: async () => { await refreshDetail(); updateRecent(); await loadDocs() },
+    onFailed: async info => { taskInfo.value = info; await refreshDetail() },
   })
 }
 
 onMounted(async () => {
-  detail.value = await getReport(reportId)
+  try {
+    detail.value = await getReport(reportId)
+  } catch {
+    detailError.value = true // 404/网络:渲染错误块,不白屏(spec §4.1/§11,fix round 2)
+    return
+  }
   updateRecent()
   if (detail.value.task && !terminal.value) {
     await startPolling()
@@ -133,6 +152,10 @@ onBeforeUnmount(() => poller.stop())
       </el-tabs>
     </section>
   </main>
+  <main v-else-if="detailError" class="page-col report-error">
+    <p>报告不存在或服务暂不可用。</p>
+    <el-button type="primary" @click="$router.push('/')">回首页</el-button>
+  </main>
 </template>
 
 <style scoped>
@@ -153,4 +176,5 @@ onBeforeUnmount(() => poller.stop())
 .fail-detail { font-size: 13px; opacity: 0.6; }
 .doc-error, .degraded-note { padding: var(--space-8) var(--space-16); border-radius: 4px; background: var(--c-mist); margin-bottom: var(--space-16); }
 .content-block { margin-top: var(--space-48); }
+.report-error { margin-top: var(--space-48); }
 </style>

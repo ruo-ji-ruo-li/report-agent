@@ -7,6 +7,7 @@ import HomeView from '../src/views/HomeView.vue'
 import ReportView from '../src/views/ReportView.vue'
 import * as reportsApi from '../src/api/reports'
 import * as tasksApi from '../src/api/tasks'
+import type { ReportDetail, TaskInfo } from '../src/api/types'
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -61,5 +62,58 @@ describe('视图冒烟(spec-f §9)', () => {
     const w = mount(ReportView, globalOpts)
     await flushPromises()
     expect(w.text()).toContain('保存并继续解读')
+  })
+
+  it('ReportView 详情加载失败渲染错误块而非白屏', async () => {
+    vi.spyOn(reportsApi, 'getReport').mockRejectedValue({ response: { status: 404 } })
+    const w = mount(ReportView, globalOpts)
+    await flushPromises()
+    expect(w.text()).toContain('报告不存在或服务暂不可用。')
+    expect(w.text()).toContain('回首页')
+  })
+
+  it('ReportView 轮询竞态:迟到的旧 running 快照不覆写终态', async () => {
+    vi.useFakeTimers()
+    try {
+      const running: ReportDetail = {
+        meta: { id: 'r1', source: 'pdf', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        items: [], normalized: [],
+        task: { id: 't1', status: 'running', stage: 'generate', error: null },
+      }
+      const completed: ReportDetail = {
+        meta: { id: 'r1', source: 'pdf', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        items: [], normalized: [],
+        task: { id: 't1', status: 'completed', stage: null, error: null },
+      }
+      let calls = 0
+      let staleResolve!: (d: ReportDetail) => void
+      const staleSnapshot = new Promise<ReportDetail>(res => { staleResolve = res })
+      const getSpy = vi.spyOn(reportsApi, 'getReport').mockImplementation(() => {
+        calls += 1
+        if (calls === 1) return Promise.resolve(running)   // 挂载首查
+        if (calls === 2) return staleSnapshot              // tick1 onUpdate 在途刷新(悬挂)
+        return Promise.resolve(completed)                  // tick2 onDone 刷新
+      })
+      const taskResults: TaskInfo[] = [
+        { task_id: 't1', report_id: 'r1', status: 'running', stage: 'generate', timings: {}, completed_stages: [], error: null },
+        { task_id: 't1', report_id: 'r1', status: 'completed', stage: null, timings: {}, completed_stages: [], error: null },
+      ]
+      vi.spyOn(tasksApi, 'getTask').mockImplementation(() => Promise.resolve(taskResults.shift()!))
+      vi.spyOn(reportsApi, 'getInterpretation').mockResolvedValue({
+        summary: '总体结论文本', items: [], advice_summary: '', disclaimer: '', degraded: false,
+      })
+      vi.spyOn(reportsApi, 'getFollowupPlan').mockResolvedValue({ items: [], degraded: false })
+
+      const w = mount(ReportView, globalOpts)
+      await vi.advanceTimersByTimeAsync(0)    // 挂载 + tick1(running)已把第二次 getReport 挂起
+      expect(getSpy).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(2000) // tick2:completed → onDone 快照 + 文档加载
+      staleResolve(running)                   // 迟到的旧 running 快照此刻才返回
+      await vi.advanceTimersByTimeAsync(0)
+      expect(w.text()).toContain('总体结论文本') // 终态解读仍可见
+      expect(w.find('.task-progress').exists()).toBe(false) // 无进度区残留
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
