@@ -57,4 +57,26 @@ describe('createTaskPoller(spec-f §5.2)', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(cb.onDone).toHaveBeenCalledTimes(1)
   })
+
+  it('stop 后返回的在途 fetch 不触发 ghost 回调,也不影响新会话', async () => {
+    let resolveOld!: (t: TaskInfo) => void
+    const oldP = new Promise<TaskInfo>(r => { resolveOld = r })
+    const fetchTask = vi.fn()
+      .mockReturnValueOnce(oldP)                          // 会话 1:悬挂
+      .mockResolvedValueOnce(info('running'))             // 会话 2 首查
+      .mockResolvedValue(info('completed'))               // 会话 2 后续
+    const cb = { onUpdate: vi.fn(), onAwaitingMeta: vi.fn(), onDone: vi.fn(), onFailed: vi.fn() }
+    const p = createTaskPoller(fetchTask)
+    p.start('t1', cb)
+    p.stop()                                              // 会话 1 在途被 stop
+    resolveOld(info('completed'))                         // 旧 fetch 返回:不得触发任何回调
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cb.onDone).not.toHaveBeenCalled()              // ghost 已拦截
+
+    p.start('t2', cb)                                     // 会话 2
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cb.onUpdate).toHaveBeenCalledTimes(1)          // 会话 2 正常运行
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(cb.onDone).toHaveBeenCalledTimes(1)            // 会话 2 正常终态,未被旧会话污染
+  })
 })
