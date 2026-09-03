@@ -98,7 +98,8 @@ class MilvusStore:
                 "entity_type": c.entity_type,
                 "entity_id": c.entity_id,
                 "title": c.title,
-                "section_title": c.section_title,
+                # Milvus 2.5 VARCHAR 字段不接受 None(nil),空值落空串(读侧 get 兼容)
+                "section_title": c.section_title or "",
                 "chunk_index": c.chunk_index,
                 "total_chunks": c.total_chunks,
                 "parent_id": c.parent_id,
