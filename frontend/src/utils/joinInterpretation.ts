@@ -1,3 +1,4 @@
+// src/utils/joinInterpretation.ts
 import type { InterpretationItem, NormalizedItem } from '../api/types'
 
 export interface JoinedItem { interp: InterpretationItem; norm: NormalizedItem | null }
