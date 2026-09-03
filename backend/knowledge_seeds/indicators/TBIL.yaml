@@ -1,0 +1,69 @@
+code: TBIL
+name: 总胆红素
+aliases:
+- TBIL
+- 总胆红素(TBIL)
+- 血清总胆红素
+unit: μmol/L
+unit_conversions:
+  mg/dL: 17.1
+category: 肝功能
+description: 总胆红素是血液中直接胆红素与间接胆红素的总和，反映肝脏对胆红素的代谢及胆汁排泄功能，是评估黄疸及肝胆疾病的基础指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 3.4
+  high: 20.5
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间（基于国内多中心健康人群共识，不同实验室略有差异）
+high_suggests:
+- condition: 肝细胞损伤风险
+  strength: medium
+  note: 轻度升高（<2倍正常上限）可见于肝炎、脂肪肝等，需结合转氨酶等指标综合评估
+  description: 肝细胞受损导致胆红素代谢能力下降
+- condition: 胆汁淤积风险
+  strength: medium
+  note: 以直接胆红素升高为主时，提示胆道梗阻可能，如胆结石、胆管炎等
+  description: 胆汁排泄受阻导致胆红素反流入血
+- condition: 溶血风险
+  strength: medium
+  note: 以间接胆红素升高为主时，需考虑溶血性疾病可能
+  description: 红细胞破坏过多，超出肝脏处理能力
+- condition: 吉尔伯特综合征可能
+  strength: weak
+  note: 轻度升高（通常<50μmol/L）且以间接胆红素为主，无其他异常时，可能为良性遗传性高胆红素血症
+  description: UGT1A1基因变异导致胆红素结合能力轻度下降
+low_suggests: []
+clusters:
+- 肝功能
+- 胆红素代谢
+interventions:
+- level: lifestyle
+  text: 避免饮酒，减少高脂饮食，规律作息，避免过度劳累
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 轻度升高且无其他异常时，建议1-3个月后复查肝功能，同时可加查直接胆红素、转氨酶、腹部超声
+  timeframe: 1-3个月
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若总胆红素持续升高超过正常上限2倍，或伴有乏力、黄疸、尿色加深等症状，建议专科就诊进一步明确病因
+  timeframe: 2周内
+  departments:
+  - 消化内科
+  - 肝病科
+  - 血液科
+- level: urgent
+  text: 若总胆红素急剧升高（如超过正常上限5倍）或伴有意识改变、严重腹痛、高热等，需尽快就医
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 消化内科
+departments:
+- 消化内科
+- 肝病科
+narrative: 总胆红素是反映肝脏代谢和胆汁排泄功能的重要指标，由直接胆红素和间接胆红素组成。轻度升高（<2倍正常上限）在健康人群中并不少见，可能与疲劳、饮酒、饥饿或吉尔伯特综合征等良性因素有关，通常无需过度紧张。但若持续升高或伴随其他肝功能异常（如转氨酶升高）、黄疸、尿色加深等症状，则需警惕肝细胞损伤、胆汁淤积或溶血性疾病等病理情况。总胆红素降低临床意义有限，一般无需特殊处理。本内容不构成医学诊断。

@@ -1,0 +1,63 @@
+code: TC
+name: 总胆固醇
+aliases:
+- 胆固醇
+- TC
+unit: mmol/L
+unit_conversions:
+  mg/dL: 0.0259
+category: 血脂
+description: 总胆固醇是血液中所有脂蛋白所含胆固醇的总和，是评估血脂代谢和心血管风险的基础指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: null
+  high: 5.2
+  critical_low: null
+  critical_high: null
+  source_note: 中国成人血脂异常防治指南（2016年修订版）：合适水平<5.2 mmol/L；边缘升高5.2-6.2 mmol/L；升高≥6.2 mmol/L。
+high_suggests:
+- condition: 动脉粥样硬化性心血管疾病风险
+  strength: strong
+  note: 总胆固醇升高是动脉粥样硬化的重要危险因素，需结合低密度脂蛋白胆固醇（LDL-C）等指标综合评估。边缘升高（5.2-6.2 mmol/L）提示风险增加，≥6.2
+    mmol/L为明显升高。
+  description: 动脉粥样硬化是脂质在动脉壁沉积形成斑块，导致血管狭窄或堵塞的慢性疾病。
+- condition: 家族性高胆固醇血症可能
+  strength: medium
+  note: 若总胆固醇显著升高（通常>7.8 mmol/L）且年轻，需考虑遗传性血脂异常可能。
+  description: 家族性高胆固醇血症是一种遗传性脂质代谢异常，导致血液中胆固醇水平极高，早发心血管病风险显著增加。
+- condition: 甲状腺功能减退可能
+  strength: weak
+  note: 甲减可导致继发性血脂异常，表现为总胆固醇升高。若同时有乏力、怕冷等症状，可进一步检查甲状腺功能。
+  description: 甲状腺功能减退是甲状腺激素分泌不足，导致机体代谢减慢的疾病。
+low_suggests:
+- condition: 营养不良或消耗性疾病可能
+  strength: weak
+  note: 总胆固醇过低（通常<2.6 mmol/L）较少见，可见于严重营养不良、慢性消耗性疾病或严重肝病。需结合临床情况判断。
+  description: 营养不良指能量、蛋白质或其他营养素摄入不足或利用障碍；消耗性疾病如恶性肿瘤、结核等可导致机体过度消耗。
+clusters:
+- 血脂
+- 心血管风险
+interventions:
+- level: lifestyle
+  text: 无论总胆固醇水平如何，均建议保持健康生活方式：低饱和脂肪、低反式脂肪饮食，增加膳食纤维摄入，规律有氧运动，控制体重，戒烟限酒。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若总胆固醇处于边缘升高水平（5.2-6.2 mmol/L）且无其他心血管危险因素，建议调整生活方式后3-6个月复查血脂全套。
+  timeframe: 3-6个月
+  departments:
+  - 全科医学科
+  - 健康管理中心
+- level: specialist
+  text: 若总胆固醇≥6.2 mmol/L，或边缘升高但合并高血压、糖尿病、冠心病等危险因素，建议至心血管内科或内分泌科就诊，评估是否需要药物治疗。
+  timeframe: 1个月内
+  departments:
+  - 心血管内科
+  - 内分泌科
+departments:
+- 心血管内科
+- 内分泌科
+- 全科医学科
+narrative: 总胆固醇是血脂筛查的基础指标，反映血液中胆固醇的总负荷。其水平受饮食、遗传、年龄、性别及多种疾病状态影响。总胆固醇升高是动脉粥样硬化性心血管疾病的重要危险因素，但单一指标价值有限，需结合低密度脂蛋白胆固醇（LDL-C）、高密度脂蛋白胆固醇（HDL-C）及甘油三酯等全面评估。轻度升高（边缘升高）可通过生活方式干预改善；显著升高或合并其他危险因素时需专科评估。总胆固醇过低临床少见，多与严重消耗性疾病相关。单次检测结果可能受近期饮食（如高脂餐）影响，异常结果建议复查确认。本内容不构成医学诊断。

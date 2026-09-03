@@ -1,0 +1,80 @@
+code: UREA
+name: 尿素
+aliases:
+- 尿素氮
+- 血尿素氮
+- BUN
+- Urea Nitrogen
+unit: mmol/L
+unit_conversions:
+  mg/dL: 0.357
+category: 肾功能
+description: 尿素是蛋白质代谢的终末产物，主要通过肾脏排泄，是评估肾小球滤过功能的常用指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 3.1
+  high: 8.0
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间，基于国内多中心健康人群调查及临床检验常规标准。
+high_suggests:
+- condition: 肾前性氮质血症风险
+  strength: medium
+  note: 脱水、心力衰竭、休克等导致肾血流量减少，尿素被动升高，肌酐可正常或轻度升高。
+  description: 肾前性因素指肾血流灌注不足导致的肾功能异常，通常为可逆性。
+- condition: 肾实质性病变风险
+  strength: medium
+  note: 急慢性肾小球肾炎、肾小管间质性肾病、肾衰竭等，尿素升高程度与病变严重性相关。
+  description: 肾实质病变指肾脏本身结构或功能受损，需结合肌酐、尿常规等综合评估。
+- condition: 肾后性梗阻风险
+  strength: medium
+  note: 尿路结石、前列腺增生、肿瘤等导致尿路梗阻，尿素排泄受阻而升高。
+  description: 肾后性梗阻指尿液排出通道受阻，解除梗阻后肾功能多可恢复。
+- condition: 高蛋白饮食或分解代谢亢进
+  strength: weak
+  note: 大量摄入蛋白质、消化道出血、严重感染、烧伤等使体内蛋白质分解增加，尿素生成增多。
+  description: 非肾脏本身病变，为尿素生成过多所致。
+low_suggests:
+- condition: 严重肝病风险
+  strength: medium
+  note: 肝硬化、重型肝炎等肝脏合成尿素能力下降，血尿素水平可降低。
+  description: 肝脏是合成尿素的主要器官，肝功能严重受损时尿素生成减少。
+- condition: 低蛋白饮食或营养不良
+  strength: weak
+  note: 蛋白质摄入不足或吸收障碍，尿素生成原料减少。
+  description: 生理性降低，一般无临床意义。
+- condition: 过度水化状态
+  strength: weak
+  note: 大量输液或饮水导致血液稀释，尿素浓度相对降低。
+  description: 血液稀释所致，非病理改变。
+clusters:
+- 肾功能
+- 肾脏代谢
+interventions:
+- level: recheck
+  text: 若尿素轻度升高且无伴随症状，建议清淡饮食3天后复查肾功能（尿素、肌酐、尿酸），并同步检查尿常规。
+  timeframe: 1-2周
+  departments:
+  - 肾内科
+  - 全科医学科
+- level: specialist
+  text: 若尿素显著升高，或伴肌酐升高、水肿、少尿、恶心呕吐等症状，需尽快至肾内科就诊，完善进一步检查。
+  timeframe: 尽快（数日内）
+  departments:
+  - 肾内科
+- level: urgent
+  text: 若尿素急剧升高且伴无尿、严重水肿、呼吸困难或意识改变，提示急性肾损伤可能，需立即急诊处理。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 肾内科
+- level: lifestyle
+  text: 保持适量饮水，避免长期高蛋白饮食，控制盐分摄入，避免使用肾毒性药物。
+  timeframe: null
+  departments: []
+departments:
+- 肾内科
+- 全科医学科
+narrative: 尿素是蛋白质代谢的终产物，经肾小球滤过后部分被肾小管重吸收，其血浓度受肾小球滤过功能、尿路通畅性、蛋白质摄入量及分解代谢状态等多因素影响。尿素升高可见于肾前性（脱水、心衰）、肾实质性（肾炎、肾衰）及肾后性（梗阻）因素，也可因高蛋白饮食或消化道出血等非肾脏原因引起；尿素降低多见于严重肝病、低蛋白饮食或过度水化。单次尿素升高需结合肌酐、尿常规及临床症状综合判断，尿素与肌酐比值有助于区分肾前性与肾实质性病变。本内容不构成医学诊断。

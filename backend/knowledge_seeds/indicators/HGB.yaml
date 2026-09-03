@@ -1,0 +1,104 @@
+code: HGB
+name: 血红蛋白
+aliases:
+- 血色素
+- Hb
+- Hgb
+unit: g/L
+unit_conversions:
+  g/dL: 10
+category: 血常规
+description: 血红蛋白是红细胞内运输氧气的蛋白质，其浓度直接反映血液的携氧能力，是诊断贫血和红细胞增多症的核心指标。
+ranges:
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: 120
+  high: 160
+  critical_low: 50
+  critical_high: 200
+  source_note: 基于《临床检验诊断学》及国内多中心健康人群参考区间，成人男性为120-160 g/L。危急值参考《全国临床检验操作规程》（第4版）及常见危急值报告制度。
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 110
+  high: 150
+  critical_low: 50
+  critical_high: 200
+  source_note: 基于《临床检验诊断学》及国内多中心健康人群参考区间，成人女性为110-150 g/L。危急值参考《全国临床检验操作规程》（第4版）及常见危急值报告制度。
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: null
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: 儿童及青少年血红蛋白参考区间随年龄变化显著，且存在性别差异，此处不提供统一参考区间，建议参考年龄和性别匹配的儿童参考值。
+high_suggests:
+- condition: 真性红细胞增多症风险
+  strength: medium
+  note: 当血红蛋白显著升高（如男性>185 g/L，女性>165 g/L）且排除继发因素时，需考虑骨髓增殖性肿瘤可能。
+  description: 一种骨髓造血干细胞克隆性疾病，以红细胞过度增生为特征。
+- condition: 继发性红细胞增多风险
+  strength: medium
+  note: 常见于慢性缺氧（如慢性阻塞性肺病、睡眠呼吸暂停综合征、高海拔居住）或促红细胞生成素异常增多（如肾肿瘤）等。
+  description: 由其他疾病或环境因素导致的红细胞生成增加。
+- condition: 脱水或血液浓缩可能
+  strength: weak
+  note: 严重呕吐、腹泻、大量出汗或使用利尿剂后，血浆容量减少，可导致血红蛋白相对性升高。
+  description: 体液丢失导致血液浓缩，使血细胞浓度相对增高。
+low_suggests:
+- condition: 缺铁性贫血风险
+  strength: strong
+  note: 最常见的贫血类型，常伴平均红细胞体积（MCV）降低。需结合铁蛋白等铁代谢指标进一步评估。
+  description: 体内铁储备不足，影响血红蛋白合成，导致小细胞低色素性贫血。
+- condition: 慢性病贫血可能
+  strength: medium
+  note: 常见于慢性感染、炎症性疾病（如类风湿关节炎）、肿瘤等，铁利用障碍所致。
+  description: 慢性疾病状态下，炎症因子干扰铁代谢和红细胞生成。
+- condition: 巨幼细胞性贫血风险
+  strength: medium
+  note: 常伴平均红细胞体积（MCV）升高，多由叶酸或维生素B12缺乏引起。
+  description: DNA合成障碍导致红细胞核发育异常，形成大细胞性贫血。
+- condition: 溶血性贫血可能
+  strength: medium
+  note: 红细胞破坏加速，常伴网织红细胞升高、间接胆红素升高。
+  description: 红细胞在体内过早、过多地被破坏。
+- condition: 失血性贫血可能
+  strength: medium
+  note: 急性大量失血或慢性消化道、妇科等少量失血均可导致。
+  description: 血液丢失超过造血代偿能力。
+- condition: 骨髓造血功能障碍风险
+  strength: weak
+  note: 如再生障碍性贫血、白血病等，常伴白细胞和血小板减少。
+  description: 骨髓造血干细胞或微环境受损，导致全血细胞减少。
+clusters:
+- 血常规
+- 贫血指标
+- 红细胞参数
+interventions:
+- level: lifestyle
+  text: 均衡饮食，保证富含铁、叶酸和维生素B12的食物摄入（如红肉、动物肝脏、绿叶蔬菜）。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若轻度异常且无明显症状，建议定期复查血常规，观察变化趋势。
+  timeframe: 1-3个月
+  departments:
+  - 全科医学科
+  - 体检科
+- level: specialist
+  text: 若血红蛋白明显低于或高于参考区间，或伴有乏力、头晕、面色苍白、心悸等症状，建议专科就诊明确病因。
+  timeframe: 2周内
+  departments:
+  - 血液科
+- level: urgent
+  text: 若血红蛋白低于危急值（如<50 g/L）或出现严重贫血症状（如晕厥、呼吸困难、胸痛），或怀疑急性大量失血，需立即就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 血液科
+departments:
+- 血液科
+- 全科医学科
+narrative: 血红蛋白是血常规中最核心的指标之一，直接反映血液携氧能力。其水平受年龄、性别、海拔、吸烟、妊娠等多种生理因素影响。血红蛋白降低最常见于各类贫血，其中缺铁性贫血最为普遍，也可见于慢性病、失血或造血异常；升高则多见于血液浓缩或慢性缺氧，需警惕真性红细胞增多症等骨髓增殖性疾病。解读时应结合红细胞计数、红细胞比容、平均红细胞体积等参数综合判断。本内容不构成医学诊断。

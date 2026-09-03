@@ -1,0 +1,82 @@
+code: ALT
+name: 丙氨酸氨基转移酶
+aliases:
+- 谷丙转氨酶
+- GPT
+- ALT
+unit: U/L
+unit_conversions: {}
+category: 肝功能
+description: 丙氨酸氨基转移酶主要存在于肝细胞中，是反映肝细胞损伤的常用敏感指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: null
+  high: 40
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考上限为40 U/L，不同实验室可能略有差异。
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: null
+  high: 50
+  critical_low: null
+  critical_high: null
+  source_note: 部分指南建议男性上限为50 U/L，但为保守起见，通用值仍以40 U/L为主。
+high_suggests:
+- condition: 肝细胞损伤可能
+  strength: strong
+  note: 轻度升高（1-2倍上限）可见于脂肪肝、药物、饮酒等；显著升高（>10倍上限）多见于急性病毒性肝炎、药物性肝损伤等。
+  description: 各种原因导致的肝细胞受损，使ALT释放入血。
+- condition: 非酒精性脂肪性肝病风险
+  strength: medium
+  note: 轻度升高且无其他明确原因时，需考虑脂肪肝可能，常与肥胖、高血脂、糖尿病等代谢因素相关。
+  description: 肝细胞内脂肪堆积过多引起的慢性肝损伤。
+- condition: 药物性肝损伤可能
+  strength: medium
+  note: 近期服用过某些药物（如对乙酰氨基酚、他汀类、某些抗生素等）或保健品，可能导致ALT升高。
+  description: 药物或其代谢产物对肝脏的直接或间接损害。
+- condition: 酒精性肝病可能
+  strength: medium
+  note: 长期大量饮酒可导致ALT升高，常伴有AST升高更明显。
+  description: 长期过量饮酒导致的肝脏损害。
+- condition: 病毒性肝炎可能
+  strength: medium
+  note: 急性或慢性病毒性肝炎（甲、乙、丙、戊等）活动期可出现ALT明显升高。
+  description: 肝炎病毒感染引起的肝脏炎症。
+low_suggests: []
+clusters:
+- 肝功能
+- 肝酶谱
+interventions:
+- level: lifestyle
+  text: 限制饮酒，均衡饮食，控制体重，避免高脂高糖食物，规律作息。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若为轻度升高（<2倍上限），且无明显症状，建议1-2周后复查ALT，同时可加查AST、GGT、总胆红素等。
+  timeframe: 1-2周
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若复查仍持续升高，或升高超过2倍上限，或伴有乏力、食欲不振、黄疸等症状，建议专科就诊，进一步明确病因。
+  timeframe: 2周内
+  departments:
+  - 消化内科
+  - 肝病科
+  - 感染科
+- level: urgent
+  text: 若ALT显著升高（>10倍上限）或伴有严重黄疸、凝血功能障碍等，需尽快就医。
+  timeframe: 立即或24小时内
+  departments:
+  - 急诊科
+  - 消化内科
+  - 肝病科
+departments:
+- 消化内科
+- 肝病科
+- 感染科
+narrative: 丙氨酸氨基转移酶（ALT）是肝细胞损伤的敏感标志物，主要存在于肝细胞浆中。当肝细胞受损时，ALT释放入血，导致血清水平升高。ALT升高程度与肝损伤严重程度相关，但并非完全平行。常见原因包括病毒性肝炎、酒精性肝病、非酒精性脂肪肝、药物性肝损伤、自身免疫性肝病等。轻度升高（<2倍正常上限）在健康人群中亦可见，可能与近期劳累、剧烈运动、饮食油腻等有关，建议复查。显著升高需警惕急性肝损伤。ALT降低通常无临床意义。本内容不构成医学诊断。

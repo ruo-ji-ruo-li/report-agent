@@ -1,0 +1,74 @@
+code: PLT
+name: 血小板计数
+aliases:
+- 血小板
+- PLT
+- Platelet Count
+unit: ×10⁹/L
+unit_conversions: {}
+category: 血常规
+description: 血小板计数是血常规中的一项核心指标，用于评估血液中血小板的数量，反映机体的止血与凝血功能。
+ranges:
+- sex: any
+  age_min: 0
+  age_max: 150
+  low: 125
+  high: 350
+  critical_low: 50
+  critical_high: 1000
+  source_note: 成人通用参考区间（125-350×10⁹/L）及危急值阈值（<50或>1000×10⁹/L）基于《临床检验诊断学》及国内多中心专家共识，儿童及老年人参考区间可能略有差异，但此通用范围适用于大多数体检人群。
+high_suggests:
+- condition: 反应性血小板增多可能
+  strength: medium
+  note: 常见于感染、炎症、缺铁性贫血、急性失血或脾切除术后，多为暂时性升高。
+  description: 由其他疾病或生理状态（如炎症、缺铁）引发的血小板数量增加，通常为继发性表现。
+- condition: 原发性血小板增多症风险
+  strength: weak
+  note: 若血小板持续显著升高（如>450×10⁹/L）且排除其他原因，需警惕骨髓增殖性肿瘤。
+  description: 一种骨髓造血干细胞克隆性疾病，以血小板持续显著增多为主要特征。
+- condition: 血栓形成风险
+  strength: medium
+  note: 血小板过多会增加血液黏稠度，提升动脉或静脉血栓（如心肌梗死、脑卒中）的发生风险。
+  description: 血液在血管内异常凝结形成血块，阻塞血管导致组织缺血或坏死。
+low_suggests:
+- condition: 血小板生成减少可能
+  strength: medium
+  note: 可能涉及骨髓造血功能异常，如再生障碍性贫血、白血病、化疗或放疗后骨髓抑制。
+  description: 骨髓无法产生足够血小板，导致外周血血小板数量下降。
+- condition: 血小板破坏过多可能
+  strength: medium
+  note: 常见于免疫性血小板减少症（ITP）、药物性血小板减少或脾功能亢进。
+  description: 免疫系统或脾脏异常加速破坏血小板，使其寿命缩短。
+- condition: 出血风险
+  strength: strong
+  note: 血小板低于50×10⁹/L时，存在自发性出血（如皮肤瘀点、牙龈出血）风险；低于20×10⁹/L时，有严重内出血风险。
+  description: 因血小板数量不足导致止血功能障碍，易出现皮肤黏膜出血或内脏出血。
+clusters:
+- 血常规
+- 凝血功能
+interventions:
+- level: lifestyle
+  text: 避免剧烈运动和可能导致外伤的活动，戒烟限酒，均衡饮食。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若轻度异常（如血小板在100-125或350-500×10⁹/L之间）且无相关症状，建议2-4周后复查血常规，观察变化趋势。
+  timeframe: 2-4周
+  departments:
+  - 全科医学科
+  - 血液科
+- level: specialist
+  text: 若血小板持续低于100×10⁹/L或高于450×10⁹/L，或伴有出血/血栓症状，建议尽快至血液科专科就诊，完善外周血涂片、骨髓穿刺等检查。
+  timeframe: 2周内
+  departments:
+  - 血液科
+- level: urgent
+  text: 若血小板低于50×10⁹/L或高于1000×10⁹/L，或出现明显出血（如黑便、血尿）或突发胸痛、肢体肿胀，需立即就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 血液科
+departments:
+- 血液科
+- 全科医学科
+narrative: 血小板计数是评估止血与凝血功能的基础指标，正常范围通常为125-350×10⁹/L。血小板轻度升高可见于感染、缺铁等反应性情况，而显著升高需警惕原发性血小板增多症及血栓风险。血小板轻度降低可能与药物、免疫或脾功能亢进有关，显著降低则提示出血风险。单次轻度异常不必过度紧张，但需结合症状及复查趋势综合判断。本内容不构成医学诊断。

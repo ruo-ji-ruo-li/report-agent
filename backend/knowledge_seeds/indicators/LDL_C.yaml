@@ -1,0 +1,63 @@
+code: LDL_C
+name: 低密度脂蛋白胆固醇
+aliases:
+- LDL-C
+- 低密度脂蛋白
+- LDL胆固醇
+unit: mmol/L
+unit_conversions:
+  mg/dL: 0.0259
+category: 血脂
+description: 低密度脂蛋白胆固醇是血液中主要的致动脉粥样硬化脂蛋白，俗称“坏胆固醇”，是评估心血管疾病风险的核心指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: null
+  high: 3.4
+  critical_low: null
+  critical_high: null
+  source_note: 中国成人血脂异常防治指南(2016年修订版)推荐：理想水平<2.6 mmol/L，合适水平<3.4 mmol/L。此处以3.4 mmol/L作为一般人群参考上限。
+high_suggests:
+- condition: 动脉粥样硬化性心血管疾病(ASCVD)风险增高
+  strength: strong
+  note: LDL-C水平升高是动脉粥样硬化的重要危险因素，水平越高，心血管事件风险越大。具体风险分层需结合其他危险因素(如高血压、糖尿病、吸烟等)综合评估。
+  description: 动脉粥样硬化性心血管疾病包括冠心病、脑卒中等，其病理基础是动脉壁脂质沉积形成斑块。
+- condition: 家族性高胆固醇血症可能
+  strength: medium
+  note: 若LDL-C显著升高(如>4.9 mmol/L)且伴有家族史或皮肤黄色瘤，需考虑遗传性脂质代谢异常。
+  description: 家族性高胆固醇血症是一种常染色体显性遗传病，导致血浆LDL-C水平极度升高，早发冠心病风险极高。
+- condition: 继发性高脂血症可能
+  strength: weak
+  note: 甲状腺功能减退、肾病综合征、阻塞性肝病等疾病可继发LDL-C升高，需结合其他检查鉴别。
+  description: 继发性高脂血症是指由其他系统性疾病或药物引起的血脂异常，治疗原发病后血脂可改善。
+low_suggests:
+- condition: 低LDL-C水平
+  strength: weak
+  note: LDL-C过低(如<1.0 mmol/L)在普通人群中较少见，通常与使用强效降脂药物、严重营养不良或慢性消耗性疾病相关。目前无明确证据表明极低LDL-C本身有害，但需关注原发疾病。
+  description: 低LDL-C水平本身通常不被视为疾病，但若为自发性的显著降低，需排查潜在消耗性疾病。
+clusters:
+- 血脂四项
+- 心血管风险
+interventions:
+- level: lifestyle
+  text: 控制饮食中饱和脂肪和反式脂肪摄入，增加膳食纤维；坚持规律有氧运动；控制体重；戒烟限酒。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若LDL-C在3.4-4.1 mmol/L之间且无其他心血管危险因素，建议3-6个月内复查血脂，并评估整体心血管风险。
+  timeframe: 3-6个月
+  departments:
+  - 心血管内科
+  - 全科医学科
+- level: specialist
+  text: 若LDL-C≥4.1 mmol/L，或已合并高血压、糖尿病、冠心病等疾病，建议至心血管内科或内分泌科就诊，由医生评估是否需药物干预。
+  timeframe: 1-3个月
+  departments:
+  - 心血管内科
+  - 内分泌科
+departments:
+- 心血管内科
+- 内分泌科
+- 全科医学科
+narrative: 低密度脂蛋白胆固醇(LDL-C)是血脂筛查的核心指标，被称为“坏胆固醇”，其水平升高与动脉粥样硬化性心血管疾病(如心肌梗死、脑卒中)风险呈正相关。LDL-C水平受遗传、饮食(尤其饱和脂肪摄入)、肥胖、甲状腺功能及药物等多种因素影响，单次轻度升高时建议排除短期饮食干扰后复查。临床解读需结合年龄、性别、血压、血糖、吸烟史等综合评估心血管风险分层，不同风险人群的目标值不同。LDL-C降低通常与降脂药物使用相关，非药物性显著降低需排查消耗性疾病。本内容不构成医学诊断。

@@ -179,8 +179,9 @@ async def main() -> None:
             cond_chunks = chunk_documents(cond_docs, s)
             texts = [c.text for c in cond_chunks]
             embs = []
-            for i in range(0, len(texts), 100):
-                embs.extend(await llms.embedding.embed_texts(texts[i:i + 100]))
+            # DashScope MaaS embedding 端点批上限 10(真实入库时 100 触发 400 InvalidParameter)
+            for i in range(0, len(texts), 10):
+                embs.extend(await llms.embedding.embed_texts(texts[i:i + 10]))
             await asyncio.to_thread(store.upsert_chunks, cond_chunks, embs)
             print(f"[done] condition docs: {len(cond_chunks)} chunks")
     finally:

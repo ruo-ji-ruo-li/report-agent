@@ -1,0 +1,74 @@
+code: AST
+name: 天冬氨酸氨基转移酶
+aliases:
+- 谷草转氨酶
+- 天门冬氨酸氨基转移酶
+- AST
+- GOT
+unit: U/L
+unit_conversions: {}
+category: 肝功能
+description: 天冬氨酸氨基转移酶是主要存在于肝细胞、心肌细胞和骨骼肌细胞中的一种胞内酶，当这些细胞受损时会释放入血，是评估肝细胞损伤的常用指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: null
+  high: 40
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考上限为40 U/L，基于国内多数医院检验科共识。不同实验室可能略有差异，建议以报告单参考范围为准。
+high_suggests:
+- condition: 肝细胞损伤可能
+  strength: strong
+  note: 轻度升高（1-2倍上限）常见于脂肪肝、药物性肝损伤；显著升高（>10倍上限）提示急性病毒性肝炎或缺血性肝损伤。
+  description: 各种原因导致的肝细胞炎症或坏死，使AST释放入血。
+- condition: 酒精性肝病可能
+  strength: medium
+  note: 酒精性肝病时AST升高常大于ALT，且AST/ALT比值通常>1.5。
+  description: 长期大量饮酒导致的肝脏损伤，包括酒精性脂肪肝、肝炎和肝硬化。
+- condition: 心肌损伤可能
+  strength: medium
+  note: 急性心肌梗死时AST可升高，但通常伴有CK-MB和肌钙蛋白显著升高，且AST升高出现较晚。
+  description: 心肌细胞缺血坏死导致细胞内酶释放入血。
+- condition: 肌肉损伤可能
+  strength: medium
+  note: 剧烈运动、外伤、肌炎等可导致AST升高，常伴有CK、LDH同步升高。
+  description: 骨骼肌细胞损伤导致AST释放入血。
+- condition: 胆道梗阻可能
+  strength: weak
+  note: 胆道梗阻时AST可轻度升高，但通常以ALP、GGT升高更为显著。
+  description: 胆汁排泄受阻导致肝内淤积，继发肝细胞损伤。
+low_suggests: []
+clusters:
+- 肝功能
+- 心肌酶谱
+interventions:
+- level: lifestyle
+  text: 避免饮酒，减少高脂饮食，规律作息，避免过度劳累和剧烈运动后立即检测。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若轻度升高（<2倍上限），建议1-2周后复查肝功能，同时可加查ALT、GGT、ALP、胆红素等。
+  timeframe: 1-2周
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若持续升高或显著升高（>2倍上限），或伴有黄疸、乏力、食欲不振等症状，建议专科就诊进一步明确病因。
+  timeframe: 2周内
+  departments:
+  - 消化内科
+  - 肝病科
+  - 感染科
+- level: urgent
+  text: 若AST急剧升高（>1000 U/L）或伴有严重黄疸、意识改变，需立即就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 肝病科
+departments:
+- 消化内科
+- 肝病科
+- 感染科
+narrative: 天冬氨酸氨基转移酶（AST）是反映肝细胞损伤的敏感指标，广泛存在于肝、心、骨骼肌等组织中。轻度升高（1-2倍正常上限）常见于脂肪肝、药物性肝损伤或非特异性波动，可能与近期饮酒、劳累、剧烈运动有关。显著升高（>10倍正常上限）多见于急性病毒性肝炎、缺血性肝损伤或药物性肝损伤。AST/ALT比值对鉴别病因有一定参考价值：酒精性肝病时比值常>1.5，病毒性肝炎时比值通常<1。此外，心肌梗死、肌肉疾病也可导致AST升高，需结合其他酶学指标综合判断。单次轻度升高不必过度紧张，建议复查并结合其他肝功能指标评估。本内容不构成医学诊断。

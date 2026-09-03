@@ -1,0 +1,68 @@
+code: UP
+name: 尿蛋白
+aliases:
+- PRO
+- 蛋白质
+- 尿蛋白质
+unit: g/L
+unit_conversions:
+  mg/dL: '0.01'
+category: 尿常规
+description: 尿蛋白是尿液常规检查中用于评估肾脏滤过和重吸收功能的重要指标，正常生理状态下尿液中蛋白含量极微。
+ranges:
+- sex: any
+  age_min: 0
+  age_max: 150
+  low: null
+  high: 0.15
+  critical_low: null
+  critical_high: null
+  source_note: 成人尿蛋白定性试验阴性，定量参考值<0.15g/L（或<150mg/24h）。儿童参考范围与成人相近，但不同年龄段存在生理性差异，此处采用通用保守值。
+high_suggests:
+- condition: 生理性蛋白尿可能
+  strength: medium
+  note: 剧烈运动、发热、寒冷、精神紧张、长时间站立等情况下可出现一过性、轻度蛋白尿，通常<0.3g/L，休息或去除诱因后可转阴。
+  description: 非疾病状态下的暂时性尿蛋白升高。
+- condition: 肾小球性蛋白尿风险
+  strength: strong
+  note: 持续性蛋白尿，尤其>0.5g/L或伴血尿、水肿、高血压时，提示肾小球滤过膜受损。常见于肾小球肾炎、肾病综合征、糖尿病肾病等。
+  description: 肾小球滤过膜受损导致大分子蛋白漏出。
+- condition: 肾小管性蛋白尿风险
+  strength: medium
+  note: 尿蛋白以低分子量蛋白为主，常见于肾盂肾炎、间质性肾炎、药物或重金属中毒等导致的肾小管重吸收功能障碍。
+  description: 肾小管重吸收功能受损导致小分子蛋白随尿排出。
+- condition: 溢出性蛋白尿可能
+  strength: weak
+  note: 尿中异常增多的小分子蛋白（如本周蛋白）超过肾小管重吸收能力，见于多发性骨髓瘤等疾病，需进一步血清蛋白电泳等检查。
+  description: 血浆中异常蛋白增多，超过肾小管重吸收能力。
+low_suggests: []
+clusters:
+- 肾功能
+- 尿常规
+- 肾脏早期损伤
+interventions:
+- level: lifestyle
+  text: 若为剧烈运动、发热等诱因导致的一过性阳性，建议充分休息、多饮水，避免熬夜和过度劳累，避免高蛋白饮食。
+  timeframe: 1-2周
+  departments: []
+- level: recheck
+  text: 建议复查晨起中段尿尿常规，若仍为阳性，可进一步行尿微量白蛋白/肌酐比值（UACR）或24小时尿蛋白定量检查。
+  timeframe: 1-2周
+  departments:
+  - 肾内科
+  - 体检科
+- level: specialist
+  text: 若尿蛋白持续阳性（≥+）或定量>0.3g/24h，或伴有水肿、泡沫尿增多、高血压等症状，需尽快至肾内科专科就诊，完善肾功能、自身免疫抗体等检查以明确病因。
+  timeframe: 2周内
+  departments:
+  - 肾内科
+- level: urgent
+  text: 若尿蛋白阳性同时伴有肉眼血尿、少尿、严重水肿、呼吸困难或血压急剧升高，提示可能存在急性肾损伤或肾病综合征等急重症，需立即就医。
+  timeframe: 立即
+  departments:
+  - 肾内科
+  - 急诊科
+departments:
+- 肾内科
+- 泌尿内科
+narrative: 尿蛋白是尿常规中评估肾脏健康的核心指标之一。健康人尿液中蛋白含量极微，常规方法检测为阴性。当尿蛋白出现阳性时，首先需排除剧烈运动、发热、精神紧张等生理性因素。若为持续性阳性，则多提示肾脏存在实质性损伤，如肾小球肾炎、糖尿病肾病等，需结合尿沉渣镜检、肾功能及血压等综合评估。尿蛋白的严重程度与肾脏病进展密切相关，早期发现并干预对延缓肾功能恶化至关重要。本内容不构成医学诊断。

@@ -1,0 +1,90 @@
+code: UA
+name: 尿酸
+aliases:
+- 血尿酸
+- Serum Uric Acid
+- SUA
+unit: μmol/L
+unit_conversions:
+  mg/dL: 59.485
+category: 肾功能
+description: 尿酸是嘌呤代谢的终产物，主要通过肾脏排泄，是评估肾功能和嘌呤代谢状态的重要指标。
+ranges:
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: 208
+  high: 428
+  critical_low: null
+  critical_high: null
+  source_note: 成人男性通用参考区间（酶法），来源：全国临床检验操作规程（第4版）
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 155
+  high: 357
+  critical_low: null
+  critical_high: null
+  source_note: 成人女性通用参考区间（酶法，绝经前），来源：全国临床检验操作规程（第4版）
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: 120
+  high: 320
+  critical_low: null
+  critical_high: null
+  source_note: 儿童青少年参考区间（综合文献），波动较大，仅供参考
+high_suggests:
+- condition: 高尿酸血症
+  strength: strong
+  note: 血尿酸超过参考区间上限，提示嘌呤代谢紊乱或尿酸排泄减少。
+  description: 嘌呤代谢障碍引起的代谢性疾病，可导致尿酸结晶沉积。
+- condition: 痛风风险
+  strength: medium
+  note: 长期无症状高尿酸血症是痛风发作的重要危险因素，但并非所有高尿酸血症都会发展为痛风。
+  description: 尿酸盐结晶沉积于关节导致的炎症性关节炎，表现为关节剧痛。
+- condition: 肾损伤风险
+  strength: medium
+  note: 尿酸盐结晶沉积于肾脏可导致肾结石或间质性肾炎，长期高尿酸是慢性肾病的独立危险因素。
+  description: 高尿酸血症导致的肾脏结构与功能损害。
+- condition: 代谢综合征风险
+  strength: weak
+  note: 高尿酸血症常与肥胖、高血压、高血脂、糖尿病等代谢异常聚集出现。
+  description: 以腹型肥胖、高血压、高血糖、血脂异常等为特征的症候群。
+low_suggests:
+- condition: 尿酸排泄过多或生成减少可能
+  strength: weak
+  note: 低于参考区间下限较少见，可能与严重肝病、肾小管酸中毒、黄嘌呤氧化酶缺乏或使用促尿酸排泄药物有关。
+  description: 尿酸水平异常降低，可能提示潜在代谢或肾脏问题。
+clusters:
+- 肾功能
+- 痛风与代谢
+interventions:
+- level: lifestyle
+  text: 限制高嘌呤食物（如动物内脏、海鲜、浓肉汤），避免饮酒（尤其啤酒），多饮水（每日2000ml以上），控制体重。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若为首次发现且无关节症状，建议调整生活方式后2-4周复查血尿酸。
+  timeframe: 2-4周
+  departments:
+  - 肾内科
+  - 内分泌科
+- level: specialist
+  text: 若复查仍显著高于参考区间，或已出现关节红肿热痛、尿检异常，建议专科就诊评估是否需要药物干预。
+  timeframe: 1-3个月
+  departments:
+  - 风湿免疫科
+  - 肾内科
+- level: urgent
+  text: 若出现突发单关节（如大脚趾）剧烈疼痛、红肿，或伴有少尿、水肿等急性肾损伤表现，应尽快就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 风湿免疫科
+  - 肾内科
+departments:
+- 肾内科
+- 风湿免疫科
+- 内分泌科
+narrative: 尿酸是嘌呤代谢的最终产物，约三分之二经肾脏排出。其水平受饮食、遗传、肾功能及药物等多种因素影响。成人男性正常值通常为208-428μmol/L，女性为155-357μmol/L，绝经后女性可接近男性水平。血尿酸升高是痛风最重要的生化基础，但多数高尿酸血症者并无症状；持续升高亦增加尿酸性肾病和肾结石风险，并与高血压、糖尿病等代谢性疾病相关。血尿酸降低相对少见，可见于严重肝病或肾小管疾病。单次轻度升高可通过饮食调整后复查，若显著升高或伴有关节炎、肾绞痛等症状，需专科进一步评估。本内容不构成医学诊断。

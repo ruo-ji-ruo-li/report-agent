@@ -1,0 +1,68 @@
+code: FT4
+name: 游离甲状腺素
+aliases:
+- 游离T4
+- FT4
+unit: pmol/L
+unit_conversions:
+  ng/dL: 12.87
+category: 甲状腺
+description: 游离甲状腺素是甲状腺分泌的具有生理活性的激素，直接反映甲状腺功能状态。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 12.0
+  high: 22.0
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间，基于中华医学会内分泌学分会及多中心实验室共识，不同试剂盒存在差异
+high_suggests:
+- condition: 甲状腺功能亢进症可能
+  strength: strong
+  note: FT4升高伴TSH降低提示甲亢；需结合TSH、FT3及临床症状综合评估
+  description: 甲状腺激素分泌过多导致的高代谢综合征
+- condition: 甲状腺激素抵抗综合征可能
+  strength: weak
+  note: 罕见情况，FT4升高但TSH正常或升高，需专科鉴别
+  description: 靶组织对甲状腺激素反应性降低的罕见遗传病
+- condition: 药物影响可能
+  strength: medium
+  note: 胺碘酮、肝素、含碘造影剂等可导致FT4升高
+  description: 药物或外源性物质干扰甲状腺功能检测或代谢
+low_suggests:
+- condition: 甲状腺功能减退症可能
+  strength: strong
+  note: FT4降低伴TSH升高提示原发性甲减；需结合TSH及临床症状综合评估
+  description: 甲状腺激素分泌不足导致的低代谢综合征
+- condition: 垂体性或下丘脑性甲减可能
+  strength: medium
+  note: FT4降低伴TSH正常或降低，提示中枢性甲减，需进一步评估垂体功能
+  description: 垂体或下丘脑病变导致TSH分泌不足，进而引起甲状腺功能减退
+- condition: 低T3综合征可能
+  strength: weak
+  note: 严重非甲状腺疾病时可能出现FT4降低，需结合临床判断
+  description: 严重疾病状态下甲状腺激素代谢异常，非原发性甲状腺疾病
+clusters:
+- 甲状腺功能
+- 甲状腺激素
+interventions:
+- level: recheck
+  text: 若FT4轻度异常且无典型症状，建议2-4周后复查甲状腺功能全套（FT4、FT3、TSH）
+  timeframe: 2-4周
+  departments:
+  - 内分泌科
+- level: specialist
+  text: 若FT4显著异常或伴有TSH异常及临床症状，建议内分泌科专科就诊，完善甲状腺抗体、甲状腺超声等检查
+  timeframe: 2周内
+  departments:
+  - 内分泌科
+- level: urgent
+  text: 若FT4显著升高伴高热、心悸、烦躁、意识模糊等，或FT4显著降低伴黏液性水肿、昏迷等，需立即急诊处理
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 内分泌科
+departments:
+- 内分泌科
+narrative: 游离甲状腺素（FT4）是甲状腺分泌的具有生理活性的激素，不受甲状腺结合球蛋白影响，直接反映甲状腺功能状态。FT4升高常见于甲状腺功能亢进症，降低常见于甲状腺功能减退症，但需结合TSH、FT3及临床症状综合判断。FT4水平受药物（如胺碘酮、糖皮质激素）、妊娠、严重非甲状腺疾病等因素影响，可出现一过性波动。单次轻度异常且无症状时，建议定期复查；显著异常或伴典型症状时，应及时内分泌科就诊。本内容不构成医学诊断。

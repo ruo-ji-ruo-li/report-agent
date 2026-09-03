@@ -1,0 +1,71 @@
+code: HDL_C
+name: 高密度脂蛋白胆固醇
+aliases:
+- 高密度脂蛋白
+- HDL
+- HDL-C
+unit: mmol/L
+unit_conversions:
+  mg/dL: 0.0259
+category: 血脂
+description: 高密度脂蛋白胆固醇是血脂的一种，通常被称为“好胆固醇”，参与胆固醇逆向转运，有助于清除血管壁内多余的胆固醇。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 1.0
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: '中国成人血脂异常防治指南(2016年修订版): 男性<1.0 mmol/L, 女性<1.3 mmol/L为偏低; 未设定上限。'
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 1.3
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: '中国成人血脂异常防治指南(2016年修订版): 女性HDL-C<1.3 mmol/L为偏低。'
+high_suggests:
+- condition: 动脉粥样硬化性心血管疾病风险降低
+  strength: strong
+  note: HDL-C水平较高通常与心血管疾病风险降低相关，但极高水平(如>2.3 mmol/L)的临床意义尚不完全明确，部分研究提示可能存在其他健康风险。
+  description: 高密度脂蛋白胆固醇水平升高通常被视为有益指标，与较低的心血管事件风险相关。
+low_suggests:
+- condition: 动脉粥样硬化性心血管疾病风险增加
+  strength: strong
+  note: HDL-C水平低于参考下限是动脉粥样硬化性心血管疾病的独立危险因素。
+  description: 低水平的高密度脂蛋白胆固醇是心血管疾病的一个独立危险因素，提示血管清除胆固醇的能力下降。
+- condition: 代谢综合征可能
+  strength: medium
+  note: HDL-C降低常与腹部肥胖、高甘油三酯、高血压、胰岛素抵抗等代谢异常聚集出现。
+  description: 代谢综合征是一组以肥胖、高血糖、血脂异常以及高血压等聚集发病的临床症候群。
+- condition: 高甘油三酯血症可能
+  strength: medium
+  note: 高甘油三酯血症常伴随HDL-C水平降低。
+  description: 血液中甘油三酯水平升高，是血脂异常的一种常见类型。
+clusters:
+- 血脂全套
+- 心血管风险筛查
+interventions:
+- level: lifestyle
+  text: 增加有氧运动(如快走、慢跑、游泳)，戒烟，控制体重，膳食中增加不饱和脂肪酸(如深海鱼、坚果、橄榄油)摄入。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若HDL-C轻度偏低且无其他风险因素，建议调整生活方式后3-6个月复查血脂。
+  timeframe: 3-6个月
+  departments:
+  - 全科医学科
+  - 健康管理中心
+- level: specialist
+  text: 若HDL-C显著偏低，或合并其他血脂异常、高血压、糖尿病等，建议专科就诊评估心血管病总体风险。
+  timeframe: null
+  departments:
+  - 心血管内科
+  - 内分泌科
+departments:
+- 心血管内科
+- 内分泌科
+- 健康管理中心
+narrative: 高密度脂蛋白胆固醇(HDL-C)是血脂检查的核心项目之一，因其参与将外周组织胆固醇逆向转运至肝脏代谢，故被称为“好胆固醇”。流行病学研究表明，HDL-C水平与动脉粥样硬化性心血管疾病风险呈负相关。HDL-C水平受遗传、性别、年龄、生活方式(如吸烟、运动、饮食)及某些疾病(如感染、炎症)影响。轻度降低通常无特异性症状，但持续偏低提示心血管保护能力减弱。升高一般无需处理，但若显著升高或伴有其他血脂异常，也应结合整体情况评估。本内容不构成医学诊断。

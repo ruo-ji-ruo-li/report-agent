@@ -1,0 +1,121 @@
+code: WBC
+name: 白细胞计数
+aliases:
+- 白细胞
+- WBC
+- Leukocyte Count
+unit: ×10⁹/L
+unit_conversions: {}
+category: 血常规
+description: 白细胞计数是衡量外周血中白细胞总数目的指标，是炎症、感染及血液系统疾病的基础筛查项目。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 3.5
+  high: 9.5
+  critical_low: 1.0
+  critical_high: 30.0
+  source_note: 成人参考区间基于全国临床检验操作规程（第4版）；危急值阈值参考《实用内科学》及多项临床共识，不同实验室可能略有差异。
+- sex: any
+  age_min: 0
+  age_max: 0
+  low: 15.0
+  high: 20.0
+  critical_low: null
+  critical_high: null
+  source_note: 新生儿（出生至28天）白细胞计数生理性偏高，参考区间参考《实用新生儿学》。
+- sex: any
+  age_min: 0.1
+  age_max: 1
+  low: 11.0
+  high: 12.0
+  critical_low: null
+  critical_high: null
+  source_note: 婴儿期白细胞计数逐渐下降，参考区间参考《诸福棠实用儿科学》。
+- sex: any
+  age_min: 1
+  age_max: 3
+  low: 6.0
+  high: 10.0
+  critical_low: null
+  critical_high: null
+  source_note: 儿童期参考区间参考《诸福棠实用儿科学》。
+- sex: any
+  age_min: 3
+  age_max: 6
+  low: 5.0
+  high: 10.0
+  critical_low: null
+  critical_high: null
+  source_note: 儿童期参考区间参考《诸福棠实用儿科学》。
+- sex: any
+  age_min: 6
+  age_max: 18
+  low: 4.0
+  high: 10.0
+  critical_low: null
+  critical_high: null
+  source_note: 儿童及青少年参考区间参考《诸福棠实用儿科学》及全国临床检验操作规程。
+high_suggests:
+- condition: 细菌感染风险
+  strength: strong
+  note: 中性粒细胞比例常同时升高，常见于化脓性球菌感染，如呼吸道、泌尿道等。
+  description: 由致病细菌引发的局部或全身性炎症反应。
+- condition: 急性应激或组织损伤可能
+  strength: medium
+  note: 如大手术、创伤、急性失血、急性溶血等，可导致反应性白细胞升高。
+  description: 机体在受到严重创伤或应激状态下出现的非特异性生理反应。
+- condition: 血液系统疾病风险
+  strength: medium
+  note: 当白细胞计数显著升高（如>50×10⁹/L）且持续存在时，需考虑白血病等骨髓增殖性疾病。
+  description: 骨髓造血功能异常导致的细胞恶性增殖性疾病。
+- condition: 非感染性炎症可能
+  strength: weak
+  note: 如类风湿关节炎、血管炎等自身免疫性疾病活动期，或使用糖皮质激素后。
+  description: 免疫系统异常攻击自身组织导致的慢性炎症状态。
+low_suggests:
+- condition: 病毒感染风险
+  strength: medium
+  note: 如流感、病毒性肝炎等，病毒抑制骨髓造血或导致边缘池白细胞聚集。
+  description: 由病毒入侵引起的感染性疾病，常伴发热、乏力等症状。
+- condition: 药物性白细胞减少可能
+  strength: medium
+  note: 如使用抗甲状腺药物、部分抗生素、抗肿瘤药物等，需结合用药史。
+  description: 药物作为半抗原或直接抑制骨髓造血导致的外周血白细胞减少。
+- condition: 血液系统疾病风险
+  strength: medium
+  note: 如再生障碍性贫血、骨髓增生异常综合征等，常伴红细胞和血小板减少。
+  description: 骨髓造血功能衰竭或无效造血导致的系列血细胞减少。
+- condition: 脾功能亢进可能
+  strength: weak
+  note: 如肝硬化门脉高压、脾大等，脾脏过度滞留和破坏血细胞。
+  description: 脾脏增大并过度破坏血细胞，导致外周血一系或多系减少。
+clusters:
+- 血常规
+- 炎症指标
+- 血液学基础
+interventions:
+- level: recheck
+  text: 若白细胞计数轻度异常（如3.0-3.5或9.5-12×10⁹/L）且无任何不适症状，建议1-2周后复查血常规，复查前避免剧烈运动、熬夜及情绪紧张。
+  timeframe: 1-2周
+  departments:
+  - 全科医学科
+  - 体检科
+- level: specialist
+  text: 若白细胞计数显著升高（>15×10⁹/L）或降低（<2.5×10⁹/L），或伴有发热、出血、淋巴结肿大等症状，建议尽快至血液科或感染科就诊，完善外周血涂片等检查。
+  timeframe: 1周内
+  departments:
+  - 血液科
+  - 感染科
+- level: urgent
+  text: 若白细胞计数低于1.0×10⁹/L或高于30×10⁹/L，且伴有高热、严重感染征象或明显出血倾向，需立即就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 血液科
+departments:
+- 全科医学科
+- 血液科
+- 感染科
+narrative: 白细胞计数是血常规中最基础且重要的指标之一，主要反映机体对抗感染和炎症的防御能力。其正常范围在成人中通常为(3.5-9.5)×10⁹/L，但儿童尤其是新生儿期数值会生理性偏高。白细胞计数升高最常见于细菌感染或急性应激状态，而病毒感染、部分药物及血液系统疾病则可能导致其降低。需要注意的是，单次白细胞计数轻度异常并不一定意味着疾病，剧烈运动、情绪波动、妊娠等生理因素均可引起波动。若数值显著异常或伴有发热、乏力、出血等临床症状，应结合白细胞分类计数及进一步检查综合评估。本内容不构成医学诊断。

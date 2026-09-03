@@ -1,0 +1,72 @@
+code: ALP
+name: 碱性磷酸酶
+aliases:
+- ALP
+- 碱性磷酸酯酶
+unit: U/L
+unit_conversions: {}
+category: 肝功能
+description: 碱性磷酸酶是一种广泛分布于肝脏、骨骼、肠道等组织的酶，血清中含量升高常见于肝胆疾病和骨骼疾病。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 45
+  high: 125
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间，不同实验室略有差异
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: null
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: 儿童及青少年因骨骼生长发育，ALP水平显著高于成人，参考区间随年龄变化大，建议参考实验室报告
+high_suggests:
+- condition: 肝胆疾病可能
+  strength: strong
+  note: 肝外胆道梗阻、肝内胆汁淤积时ALP显著升高，常伴GGT升高
+  description: 包括胆石症、胆管阻塞、药物性肝损伤等
+- condition: 骨骼疾病可能
+  strength: medium
+  note: 骨转换增加时ALP升高，如骨折愈合、Paget病、骨肿瘤等
+  description: 骨代谢异常或骨损伤相关疾病
+- condition: 生理性升高
+  strength: weak
+  note: 儿童青少年骨骼发育期、妊娠晚期可出现生理性升高
+  description: 非疾病状态下的正常波动
+low_suggests:
+- condition: 低碱性磷酸酶血症可能
+  strength: weak
+  note: 罕见遗传病或严重营养不良、甲状腺功能减退等可致ALP降低
+  description: ALP水平异常低下的少见情况
+clusters:
+- 肝功能
+- 骨代谢
+interventions:
+- level: recheck
+  text: 若ALP轻度升高且无其他异常，建议1-3个月后复查肝功能及ALP
+  timeframe: 1-3个月
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若ALP显著升高或持续升高，或伴有GGT、胆红素等异常，建议专科就诊明确病因
+  timeframe: 2-4周内
+  departments:
+  - 消化内科
+  - 肝病科
+  - 骨科
+- level: urgent
+  text: 若ALP显著升高且伴有黄疸、腹痛、发热等症状，建议尽快就医
+  timeframe: 尽快
+  departments:
+  - 急诊科
+  - 消化内科
+departments:
+- 消化内科
+- 肝病科
+- 骨科
+narrative: 碱性磷酸酶（ALP）是肝功能检查中的常用指标，主要来源于肝脏和骨骼。血清ALP升高最常见于肝胆系统疾病，尤其是胆汁淤积性肝病和胆道梗阻，此时常伴有γ-谷氨酰转移酶（GGT）升高。此外，骨骼生长、骨折修复、骨肿瘤等骨代谢活跃状态也可导致ALP升高。儿童和青少年因骨骼发育，ALP水平通常高于成人，属正常生理现象。ALP降低相对少见，可见于遗传性低磷酸酯酶症或严重营养不良。单次ALP轻度升高不一定代表疾病，需结合其他肝功能指标及临床表现综合评估。本内容不构成医学诊断。

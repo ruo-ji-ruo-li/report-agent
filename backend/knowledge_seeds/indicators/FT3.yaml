@@ -1,0 +1,68 @@
+code: FT3
+name: 游离三碘甲状腺原氨酸
+aliases:
+- 游离T3
+- FT3
+unit: pmol/L
+unit_conversions:
+  pg/mL: 1.536
+category: 甲状腺
+description: 游离三碘甲状腺原氨酸是甲状腺分泌的具有生物活性的激素，反映甲状腺功能状态，不受结合蛋白影响。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 3.1
+  high: 6.8
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间，基于中华医学会检验分会推荐及多中心参考区间研究（罗氏、雅培等主流平台），不同实验室/试剂盒略有差异，建议以实验室报告为准。
+high_suggests:
+- condition: 甲状腺功能亢进症风险
+  strength: strong
+  note: FT3升高是甲亢的敏感指标，尤其在T3型甲亢中显著升高。若同时伴TSH降低，提示甲亢可能性大。
+  description: 甲状腺激素分泌过多导致的高代谢综合征。
+- condition: 甲状腺炎早期可能
+  strength: medium
+  note: 亚急性甲状腺炎或桥本甲状腺炎破坏期，储存激素释放入血可致FT3一过性升高。
+  description: 甲状腺炎症性疾病，可伴疼痛或自身免疫异常。
+- condition: 甲状腺激素不敏感综合征可能
+  strength: weak
+  note: 罕见遗传病，表现为FT3、FT4升高但TSH正常或升高，临床可无甲亢症状。
+  description: 靶组织对甲状腺激素反应性降低的罕见病。
+low_suggests:
+- condition: 甲状腺功能减退症风险
+  strength: strong
+  note: FT3降低常见于甲减，但早期甲减FT3可正常，FT4降低更早出现。若TSH升高伴FT3降低，支持甲减诊断。
+  description: 甲状腺激素分泌不足导致的低代谢综合征。
+- condition: 低T3综合征可能
+  strength: medium
+  note: 严重疾病、饥饿、手术、创伤等非甲状腺疾病时，外周T4向T3转化减少，FT3降低而TSH、FT4多正常。
+  description: 非甲状腺疾病导致的甲状腺激素代谢异常，属机体适应性保护反应。
+- condition: 药物影响可能
+  strength: weak
+  note: 糖皮质激素、普萘洛尔、胺碘酮等药物可抑制T4向T3转化，导致FT3降低。
+  description: 药物干扰甲状腺激素代谢的常见现象。
+clusters:
+- 甲状腺功能
+- 甲状腺激素
+interventions:
+- level: recheck
+  text: 若FT3轻度异常且无临床症状，建议2-4周后复查甲状腺功能全套（TSH、FT3、FT4），并避免熬夜、压力等干扰因素。
+  timeframe: 2-4周
+  departments:
+  - 内分泌科
+- level: specialist
+  text: 若FT3显著升高或降低，伴TSH异常或明显甲亢/甲减症状（心悸、手抖、怕冷、乏力等），建议内分泌科就诊，完善甲状腺抗体、甲状腺超声等检查。
+  timeframe: 2周内
+  departments:
+  - 内分泌科
+- level: urgent
+  text: 若FT3显著升高伴高热、大汗、心动过速、烦躁不安等，或FT3极低伴昏迷、低体温，需立即急诊就医，警惕甲状腺危象或黏液性水肿昏迷。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 内分泌科
+departments:
+- 内分泌科
+narrative: 游离三碘甲状腺原氨酸（FT3）是甲状腺激素中生物活性最强的形式，不受血清甲状腺结合球蛋白影响，能更准确反映组织水平的甲状腺功能状态。FT3主要由T4在外周组织脱碘转化而来，仅约20%由甲状腺直接分泌。其水平受下丘脑-垂体-甲状腺轴精密调控，并受营养状态、药物、严重疾病等多种因素影响。FT3升高常见于甲状腺功能亢进症，降低常见于甲状腺功能减退症，但需结合TSH、FT4及临床表现综合判断。在非甲状腺疾病（如重症感染、肝病、恶性肿瘤）中，FT3可呈适应性降低，即低T3综合征，此时并非真正的甲减。不同实验室检测方法（化学发光法、电化学发光法等）参考区间略有差异，解读时应以具体实验室报告为准。本内容不构成医学诊断。

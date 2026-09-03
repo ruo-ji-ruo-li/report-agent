@@ -1,0 +1,99 @@
+code: RBC
+name: 红细胞计数
+aliases:
+- RBC
+- 红细胞
+- Red Blood Cell Count
+unit: ×10^12/L
+unit_conversions: {}
+category: 血常规
+description: 红细胞计数指单位体积血液中所含的红细胞数目，是评估血液携氧能力的基础指标。
+ranges:
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: 4.0
+  high: 5.5
+  critical_low: null
+  critical_high: null
+  source_note: 成人男性通用参考区间（基于国内临床检验操作规程及多中心共识）
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 3.5
+  high: 5.0
+  critical_low: null
+  critical_high: null
+  source_note: 成人女性通用参考区间（基于国内临床检验操作规程及多中心共识）
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: null
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: 儿童及青少年参考区间随年龄变化显著，未提供统一范围，建议参考实验室年龄分层标准
+high_suggests:
+- condition: 真性红细胞增多症风险
+  strength: medium
+  note: 当RBC显著持续升高（如男性>6.5，女性>6.0）且伴血红蛋白、血细胞比容同步升高时，需考虑骨髓增殖性肿瘤可能
+  description: 一种骨髓造血干细胞克隆性疾病，以红细胞过度增生为特征
+- condition: 继发性红细胞增多风险
+  strength: medium
+  note: 常见于慢性缺氧状态（如慢性阻塞性肺病、高海拔居住）、先天性心脏病、睡眠呼吸暂停综合征等
+  description: 由组织缺氧或促红细胞生成素异常增多导致的红细胞代偿性增加
+- condition: 相对性红细胞增多可能
+  strength: weak
+  note: 见于严重脱水、大面积烧伤、休克等导致血浆容量减少的情况
+  description: 血浆容量减少导致红细胞浓度相对升高，实际总红细胞量正常
+low_suggests:
+- condition: 贫血风险
+  strength: strong
+  note: RBC低于参考下限提示贫血可能，需结合血红蛋白、血细胞比容及红细胞指数（MCV、MCH、MCHC）进一步分型
+  description: 外周血红细胞总量减少，低于正常水平，导致组织供氧不足
+- condition: 失血可能
+  strength: medium
+  note: 急性或慢性失血（如消化道出血、月经过多）可导致红细胞丢失
+  description: 各种原因导致的血液丢失，使红细胞数量减少
+- condition: 造血原料缺乏可能
+  strength: medium
+  note: 常见于缺铁、维生素B12或叶酸缺乏，需结合红细胞指数及铁代谢、维生素水平检查
+  description: 造血所需营养物质不足，影响红细胞生成
+- condition: 骨髓造血功能减退可能
+  strength: weak
+  note: 见于再生障碍性贫血、骨髓纤维化、白血病等，常伴白细胞和血小板异常
+  description: 骨髓造血干细胞或微环境受损，导致全血细胞减少
+- condition: 溶血可能
+  strength: weak
+  note: 红细胞破坏加速，常伴网织红细胞升高、间接胆红素升高
+  description: 红细胞在体内过早、过多破坏，超出骨髓代偿能力
+clusters:
+- 血常规
+- 贫血筛查
+- 红细胞参数
+interventions:
+- level: lifestyle
+  text: 均衡饮食，保证富含铁、叶酸、维生素B12的食物摄入（如红肉、动物肝脏、绿叶蔬菜）；避免长期大量饮酒
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若RBC轻度异常且无任何症状，建议2-4周后复查血常规，观察变化趋势
+  timeframe: 2-4周
+  departments:
+  - 全科医学科
+  - 体检科
+- level: specialist
+  text: 若RBC持续低于正常且伴乏力、头晕、面色苍白等症状，或RBC显著升高，建议专科就诊进一步明确病因
+  timeframe: 2周内
+  departments:
+  - 血液科
+- level: urgent
+  text: 若RBC明显降低且伴活动后心悸、气促、黑便或大量出血征象，或RBC极度升高伴头痛、视力模糊、血栓事件，需尽快就医
+  timeframe: 立即或24小时内
+  departments:
+  - 急诊科
+  - 血液科
+departments:
+- 血液科
+- 全科医学科
+narrative: 红细胞计数是血常规核心指标之一，反映血液中红细胞的数量，直接关系到血液携氧能力。其数值受年龄、性别、居住海拔、吸烟状态、妊娠等多种生理因素影响。RBC升高可见于血液浓缩（脱水）、慢性缺氧或骨髓增殖性疾病；RBC降低则提示贫血，需结合血红蛋白、红细胞平均体积（MCV）等指标判断贫血类型和病因。单次轻度异常不必过度紧张，但持续显著异常或伴随症状时需进一步检查。本内容不构成医学诊断。

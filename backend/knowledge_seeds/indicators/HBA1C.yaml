@@ -1,0 +1,66 @@
+code: HBA1C
+name: 糖化血红蛋白
+aliases:
+- HbA1c
+- 糖化血红蛋白A1c
+- 糖化血红蛋白HbA1c
+unit: '%'
+unit_conversions: {}
+category: 糖代谢
+description: 反映近2-3个月平均血糖水平的指标，是评估长期血糖控制状况的金标准。
+ranges:
+- sex: any
+  age_min: 0
+  age_max: 150
+  low: null
+  high: 6.5
+  critical_low: null
+  critical_high: null
+  source_note: 成人正常参考范围上限为6.5%（基于ADA及中国2型糖尿病防治指南，正常值<5.7%，5.7%-6.4%为糖尿病前期，≥6.5%提示糖尿病可能，此处保守设定正常上限为6.5%）
+high_suggests:
+- condition: 糖尿病前期风险
+  strength: medium
+  note: HbA1c在5.7%-6.4%之间提示存在糖尿病前期，即血糖调节受损，未来进展为糖尿病的风险增加。
+  description: 血糖水平高于正常但尚未达到糖尿病诊断标准的一种中间状态。
+- condition: 糖尿病可能
+  strength: strong
+  note: HbA1c≥6.5%提示糖尿病可能，需结合空腹血糖或口服葡萄糖耐量试验结果进行确诊。
+  description: 以慢性高血糖为特征的代谢性疾病，长期存在可导致多系统损害。
+- condition: 血糖控制不佳
+  strength: strong
+  note: 对于已确诊糖尿病的患者，HbA1c水平高于个人控制目标（通常<7.0%），提示近2-3个月血糖控制不理想，需调整治疗方案。
+  description: 糖尿病患者血糖水平持续偏高，增加并发症风险。
+low_suggests:
+- condition: 低血糖风险
+  strength: weak
+  note: HbA1c水平过低（如<4.0%）可能提示频繁发生低血糖，尤其是在使用胰岛素或促泌剂治疗的糖尿病患者中。
+  description: 血糖水平低于正常值下限，可能引起心悸、出汗、甚至昏迷等症状。
+- condition: 血红蛋白病或溶血性贫血可能
+  strength: weak
+  note: 某些血红蛋白病（如地中海贫血）或溶血性贫血会缩短红细胞寿命，导致HbA1c结果假性偏低，不能真实反映平均血糖水平。
+  description: 影响红细胞生成或寿命的疾病，可干扰HbA1c检测结果的准确性。
+clusters:
+- 糖代谢
+interventions:
+- level: lifestyle
+  text: 保持均衡饮食，减少高糖、高脂食物摄入，增加蔬菜和全谷物比例；坚持规律的有氧运动（如快走、慢跑），控制体重。
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若HbA1c处于5.7%-6.4%之间，建议3-6个月内复查，并考虑进行口服葡萄糖耐量试验以进一步评估糖代谢状态。
+  timeframe: 3-6个月
+  departments:
+  - 内分泌科
+- level: specialist
+  text: 若HbA1c≥6.5%，建议尽快至内分泌科就诊，完善相关检查以明确诊断，并由专科医生制定个体化治疗方案。
+  timeframe: 2周内
+  departments:
+  - 内分泌科
+- level: specialist
+  text: 若HbA1c水平显著低于正常且伴有贫血、乏力等症状，建议至血液科就诊，排查是否存在血红蛋白病或溶血性疾病。
+  timeframe: null
+  departments:
+  - 血液科
+departments:
+- 内分泌科
+narrative: 糖化血红蛋白是红细胞内血红蛋白与葡萄糖缓慢、不可逆结合的产物，其含量与红细胞寿命（约120天）和血糖浓度成正比，因此能稳定反映近2-3个月的平均血糖水平。该指标不受单次进食或短期运动影响，是评估长期血糖控制和诊断糖尿病的重要依据。对于非糖尿病人群，HbA1c升高提示糖尿病前期或糖尿病可能；对于糖尿病患者，该指标用于监测治疗效果。需要注意的是，任何影响红细胞寿命的因素（如贫血、近期失血、输血等）都可能干扰检测结果的准确性。本内容不构成医学诊断。

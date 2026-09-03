@@ -1,0 +1,68 @@
+code: TSH
+name: 促甲状腺激素
+aliases:
+- 促甲状腺素
+- TSH
+- Thyroid Stimulating Hormone
+unit: mIU/L
+unit_conversions: {}
+category: 甲状腺
+description: 由垂体前叶分泌，调控甲状腺激素合成与释放，是评估甲状腺功能最敏感的核心指标。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 0.27
+  high: 4.2
+  critical_low: null
+  critical_high: null
+  source_note: 成人通用参考区间（基于中华医学会内分泌学分会及主流实验室共识，不同试剂盒略有差异）
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: 0.4
+  high: 5.5
+  critical_low: null
+  critical_high: null
+  source_note: 儿童青少年参考区间（随年龄变化，此为标准儿科共识范围）
+high_suggests:
+- condition: 甲状腺功能减退风险
+  strength: strong
+  note: TSH升高提示甲状腺激素分泌不足，垂体代偿性增加TSH分泌。若伴FT4降低，支持原发性甲减；若FT4正常，可能为亚临床甲减。
+  description: 甲状腺激素合成分泌减少或作用障碍导致的全身代谢减低综合征。
+- condition: 垂体TSH腺瘤可能
+  strength: weak
+  note: 极少数情况下TSH升高伴FT3、FT4升高，需考虑垂体性甲亢，但临床罕见。
+  description: 垂体分泌TSH的良性肿瘤，导致甲状腺激素过度分泌。
+low_suggests:
+- condition: 甲状腺功能亢进风险
+  strength: strong
+  note: TSH降低提示甲状腺激素分泌过多，反馈抑制垂体TSH分泌。若伴FT4/FT3升高，支持甲亢；若仅TSH降低而甲状腺激素正常，可能为亚临床甲亢。
+  description: 甲状腺激素合成分泌过多导致的全身代谢亢进综合征。
+- condition: 中枢性甲减可能
+  strength: weak
+  note: TSH降低伴FT4降低，提示垂体或下丘脑病变导致TSH分泌不足。
+  description: 垂体或下丘脑病变引起的甲状腺功能减退。
+clusters:
+- 甲状腺功能
+- 垂体-甲状腺轴
+interventions:
+- level: recheck
+  text: 若TSH轻度异常（如0.1-0.27或4.2-10 mIU/L）且无明确症状，建议2-4周后复查TSH、FT4、FT3，避免近期应激、熬夜、药物等干扰。
+  timeframe: 2-4周
+  departments:
+  - 内分泌科
+- level: specialist
+  text: 若TSH显著异常（如<0.1或>10 mIU/L）或伴明显甲亢/甲减症状，建议内分泌科专科就诊，完善甲状腺自身抗体、甲状腺超声等检查。
+  timeframe: 2周内
+  departments:
+  - 内分泌科
+- level: urgent
+  text: 若TSH极低（如<0.01 mIU/L）且伴高热、心悸、烦躁、意识模糊等，或TSH极高伴黏液性水肿昏迷倾向，需尽快就医。
+  timeframe: 立即
+  departments:
+  - 内分泌科
+  - 急诊科
+departments:
+- 内分泌科
+narrative: 促甲状腺激素（TSH）是反映甲状腺功能最灵敏的指标，由垂体前叶分泌，受下丘脑TRH及甲状腺激素的负反馈调节。TSH升高常见于原发性甲减或亚临床甲减，降低常见于甲亢或亚临床甲亢。TSH水平受年龄、妊娠、药物（如胺碘酮、锂剂）、应激、昼夜节律等影响，单次轻度异常需结合FT3、FT4及临床表现综合判断。妊娠期TSH参考区间与普通成人不同，需参照孕期特异性标准。本内容不构成医学诊断。

@@ -1,0 +1,86 @@
+code: GGT
+name: γ-谷氨酰转移酶
+aliases:
+- γ-谷氨酰转肽酶
+- 谷氨酰转肽酶
+- GGTP
+- Gamma-GT
+unit: U/L
+unit_conversions: {}
+category: 肝功能
+description: γ-谷氨酰转移酶是一种主要存在于肝脏、胆管和肾脏的酶，是评估肝胆系统疾病（尤其是胆道梗阻和酒精性肝损伤）的常用血清学指标。
+ranges:
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: 10
+  high: 60
+  critical_low: null
+  critical_high: null
+  source_note: 成人男性通用参考区间，基于多项临床指南及检验共识。
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 7
+  high: 45
+  critical_low: null
+  critical_high: null
+  source_note: 成人女性通用参考区间，基于多项临床指南及检验共识。女性水平通常低于男性。
+high_suggests:
+- condition: 胆道梗阻或胆汁淤积风险
+  strength: strong
+  note: GGT显著升高（通常>正常上限2-3倍）常提示肝内外胆管阻塞、胆汁淤积性肝病。
+  description: 胆汁排泄受阻导致胆汁在肝内淤积，可引起GGT升高。
+- condition: 酒精性肝病风险
+  strength: strong
+  note: 长期大量饮酒者GGT常明显升高，戒酒后可逐渐下降，是酒精性肝损伤的敏感指标。
+  description: 长期过量饮酒导致的肝脏损伤。
+- condition: 脂肪肝风险
+  strength: medium
+  note: 非酒精性脂肪性肝病常伴有GGT轻至中度升高，与代谢综合征相关。
+  description: 肝细胞内脂肪过度沉积引起的肝脏病变。
+- condition: 药物性肝损伤可能
+  strength: medium
+  note: 多种药物（如某些抗生素、抗癫痫药、他汀类等）可诱导肝酶合成或引起肝损伤，导致GGT升高。
+  description: 由药物及其代谢产物引起的肝脏损伤。
+- condition: 原发性或转移性肝癌风险
+  strength: weak
+  note: 肝癌患者GGT可升高，但特异性不高，需结合其他肿瘤标志物及影像学检查。
+  description: 肝脏的恶性肿瘤，包括原发性和其他部位转移而来。
+- condition: 胰腺疾病可能
+  strength: weak
+  note: 胰腺炎或胰腺肿瘤压迫胆总管时可引起GGT升高。
+  description: 胰腺的炎症或肿瘤性疾病。
+low_suggests: []
+clusters:
+- 肝功能
+- 肝胆疾病
+- 酒精性肝病
+interventions:
+- level: lifestyle
+  text: 若近期有饮酒史，建议严格戒酒或暂停饮酒，避免高脂饮食，适度运动。
+  timeframe: 2-4周
+  departments: []
+- level: recheck
+  text: 若为轻度升高且无明显症状，建议在调整生活方式后复查肝功能（包括GGT、ALT、AST、ALP、胆红素等）。
+  timeframe: 2-4周
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若GGT持续升高或伴有乏力、黄疸、腹痛等症状，或合并其他肝功能指标异常，建议专科就诊，完善腹部超声等检查以明确病因。
+  timeframe: 2周内
+  departments:
+  - 消化内科
+  - 肝病科
+- level: urgent
+  text: 若GGT显著升高（如超过正常上限5倍以上）且伴有明显黄疸、腹痛、发热或陶土样大便，提示可能存在急性胆道梗阻，需尽快就医。
+  timeframe: 立即或24小时内
+  departments:
+  - 急诊科
+  - 消化内科
+  - 肝胆外科
+departments:
+- 消化内科
+- 肝病科
+narrative: γ-谷氨酰转移酶（GGT）是肝胆系统疾病的重要血清标志物，尤其对胆道梗阻和酒精性肝损伤较为敏感。GGT升高可见于多种情况，从生理性波动（如饮酒、药物诱导）到病理性改变（如胆结石、肝炎、脂肪肝、肿瘤等）。轻度升高（<2倍正常上限）可能无显著临床意义，但需动态观察；显著升高（>3倍正常上限）则强烈提示肝胆疾病。GGT水平也受性别影响，男性通常高于女性。单次GGT升高不能确诊任何疾病，需结合其他肝功能指标（如ALT、AST、ALP、胆红素）及影像学检查综合评估。本内容不构成医学诊断。

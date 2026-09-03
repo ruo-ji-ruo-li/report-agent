@@ -1,0 +1,84 @@
+code: NEUT
+name: 中性粒细胞百分比
+aliases:
+- 中性粒细胞比率
+- NEUT%
+- 中性粒细胞相对值
+unit: '%'
+unit_conversions: {}
+category: 血常规
+description: 中性粒细胞占白细胞总数的百分比，是反映机体急性炎症、感染及应激状态的核心指标之一。
+ranges:
+- sex: any
+  age_min: 18
+  age_max: 150
+  low: 40
+  high: 75
+  critical_low: null
+  critical_high: null
+  source_note: 成人参考区间基于《全国临床检验操作规程》（第4版）及国内多中心健康人群参考值调查，范围40%~75%。
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: null
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: 儿童中性粒细胞百分比随年龄变化显著（出生后6天至6岁以淋巴细胞为主，中性粒细胞相对偏低），且不同年龄段差异大，故不设统一参考区间，建议结合年龄及绝对计数综合评估。
+high_suggests:
+- condition: 急性细菌感染可能
+  strength: strong
+  note: 常见于化脓性球菌（如肺炎链球菌、金黄色葡萄球菌）感染，常伴白细胞总数升高及核左移。
+  description: 由细菌侵入引发的急性炎症反应，中性粒细胞是主要防御细胞。
+- condition: 组织损伤或应激状态可能
+  strength: medium
+  note: 见于大手术后、急性心肌梗死、严重创伤、烧伤等，为机体应激性反应。
+  description: 非感染性因素导致的中性粒细胞一过性升高。
+- condition: 非感染性炎症或肿瘤风险
+  strength: weak
+  note: 如类风湿关节炎、痛风急性发作、部分实体瘤或血液系统疾病（如慢性粒细胞白血病）等。
+  description: 慢性炎症或肿瘤性疾病可刺激粒细胞生成增多。
+low_suggests:
+- condition: 病毒感染可能
+  strength: medium
+  note: 流感、病毒性肝炎、风疹等病毒感染时，中性粒细胞可降低，淋巴细胞相对增多。
+  description: 病毒抑制骨髓造血或诱导粒细胞破坏/消耗。
+- condition: 血液系统疾病风险
+  strength: weak
+  note: 如再生障碍性贫血、骨髓增生异常综合征等，需结合白细胞总数及血小板等指标。
+  description: 骨髓造血功能减退导致粒细胞生成减少。
+- condition: 药物或理化因素影响可能
+  strength: weak
+  note: 如抗甲状腺药物、氯霉素、放射线或化学毒物接触史。
+  description: 药物或毒物抑制骨髓粒细胞生成。
+- condition: 脾功能亢进可能
+  strength: weak
+  note: 脾大时中性粒细胞在脾内被过度阻留和破坏。
+  description: 脾脏对血细胞的破坏增加，导致外周血粒细胞减少。
+clusters:
+- 血常规
+- 白细胞分类
+interventions:
+- level: recheck
+  text: 若轻度升高或降低且无任何不适，建议近期复查血常规，观察动态变化。
+  timeframe: 1-2周
+  departments:
+  - 全科医学科
+  - 内科
+- level: specialist
+  text: 若显著升高（如>90%）伴发热、咳嗽等症状，或显著降低（如<20%）伴发热、乏力，建议专科就诊进一步检查。
+  timeframe: 尽快（数日内）
+  departments:
+  - 血液科
+  - 感染科
+- level: urgent
+  text: 若同时伴白细胞总数极低（如<2.0×10⁹/L）或极高（如>30×10⁹/L），或出现高热、休克等严重感染征象，需立即就医。
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 血液科
+departments:
+- 全科医学科
+- 血液科
+- 感染科
+narrative: 中性粒细胞百分比是白细胞分类中的核心参数，反映机体对细菌感染、组织损伤的应答强度。其升高最常见于急性细菌感染或应激状态，降低则多见于病毒感染或药物影响。需注意，百分比受淋巴细胞等其他白细胞比例变化影响，解读时应结合白细胞总数及中性粒细胞绝对值。儿童期该指标随年龄波动大，不宜套用成人标准。轻度异常且无症状者，建议短期复查；若伴随发热、出血、持续乏力等症状，或数值显著偏离参考区间，应及时专科就诊。本内容不构成医学诊断。

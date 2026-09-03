@@ -1,0 +1,101 @@
+code: CREA
+name: 肌酐
+aliases:
+- 血肌酐
+- 血清肌酐
+- Cr
+- SCr
+unit: μmol/L
+unit_conversions:
+  mg/dL: 88.4
+category: 肾功能
+description: 肌酐是肌肉代谢产生的废物，主要通过肾小球滤过排出体外，是评估肾脏滤过功能的重要指标。
+ranges:
+- sex: male
+  age_min: 18
+  age_max: 150
+  low: 57
+  high: 111
+  critical_low: null
+  critical_high: null
+  source_note: 成人男性通用参考区间（基于多项临床指南及检验共识）
+- sex: female
+  age_min: 18
+  age_max: 150
+  low: 41
+  high: 81
+  critical_low: null
+  critical_high: null
+  source_note: 成人女性通用参考区间（基于多项临床指南及检验共识）
+- sex: any
+  age_min: 0
+  age_max: 17
+  low: null
+  high: null
+  critical_low: null
+  critical_high: null
+  source_note: 儿童参考区间随年龄变化显著，建议结合具体年龄及医院参考范围
+high_suggests:
+- condition: 急性肾损伤风险
+  strength: strong
+  note: 肌酐短期内快速升高（如48小时内升高≥26.5μmol/L或升至基线1.5倍以上）提示急性肾损伤可能
+  description: 肾功能在短时间内急剧下降的临床综合征
+- condition: 慢性肾脏病风险
+  strength: strong
+  note: 持续高于参考区间上限提示慢性肾脏病可能，需结合eGFR评估分期
+  description: 肾脏结构或功能异常持续超过3个月，对健康产生影响的慢性疾病
+- condition: 肾前性因素
+  strength: medium
+  note: 脱水、心力衰竭、休克等导致肾脏灌注不足可引起肌酐升高
+  description: 肾脏血流灌注不足导致的肾功能下降，通常为可逆性
+- condition: 肾后性梗阻风险
+  strength: medium
+  note: 尿路梗阻（如结石、前列腺增生）可导致肌酐升高
+  description: 尿液排出受阻导致的肾功能损害
+- condition: 高蛋白饮食或剧烈运动影响
+  strength: weak
+  note: 大量摄入肉类、剧烈运动或使用某些药物（如西咪替丁、甲氧苄啶）可导致肌酐一过性升高
+  description: 非病理性因素导致的肌酐水平波动
+low_suggests:
+- condition: 肌肉量减少可能
+  strength: medium
+  note: 长期卧床、营养不良、肌肉萎缩或老年人肌酐水平可偏低
+  description: 肌肉量减少导致肌酐生成减少
+- condition: 妊娠期生理性降低
+  strength: medium
+  note: 妊娠期肾小球滤过率增加，肌酐可生理性下降
+  description: 妊娠期肾脏血流动力学改变导致的正常生理现象
+- condition: 严重肝病可能
+  strength: weak
+  note: 严重肝功能不全时肌酸合成减少，可导致肌酐偏低
+  description: 肝脏合成肌酸前体减少，间接影响肌酐生成
+clusters:
+- 肾功能
+- 肾脏损伤标志物
+interventions:
+- level: lifestyle
+  text: 适量饮水，避免高蛋白饮食和剧烈运动后立即检测；避免使用肾毒性药物（如非甾体抗炎药）
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 轻度升高（超出上限10%以内）且无明显症状者，建议1-2周后复查肌酐及尿素氮
+  timeframe: 1-2周
+  departments:
+  - 肾内科
+  - 全科医学科
+- level: specialist
+  text: 肌酐持续高于参考区间上限，或伴eGFR下降，建议肾内科专科就诊，完善尿常规、肾脏超声等检查
+  timeframe: 2-4周内
+  departments:
+  - 肾内科
+- level: urgent
+  text: 肌酐显著升高（超过正常上限2倍以上）或伴少尿、水肿、恶心呕吐等症状，需尽快就医
+  timeframe: 24-48小时内
+  departments:
+  - 肾内科
+  - 急诊科
+departments:
+- 肾内科
+- 全科医学科
+- 体检科
+narrative: 肌酐是肌肉代谢的终产物，主要由肾小球滤过排出，是评估肾小球滤过功能的常用指标。肌酐水平受肌肉量、年龄、性别、饮食及药物等多种因素影响，单次轻度升高不一定代表肾脏病变，需结合尿素氮、eGFR、尿常规等综合判断。肌酐升高常见于急慢性肾脏病、肾灌注不足或尿路梗阻；降低多见于肌肉量减少或妊娠期。剧烈运动、大量摄入肉类后检测可致一过性升高，建议复查确认。本内容不构成医学诊断。

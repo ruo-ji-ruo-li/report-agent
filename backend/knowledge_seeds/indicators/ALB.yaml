@@ -1,0 +1,90 @@
+code: ALB
+name: 白蛋白
+aliases:
+- Albumin
+- ALB
+- 血清白蛋白
+unit: g/L
+unit_conversions:
+  g/dL: 10.0
+category: 肝功能
+description: 白蛋白是肝脏合成的主要血浆蛋白，反映肝脏合成功能及营养状态。
+ranges:
+- sex: any
+  age_min: 0
+  age_max: 150
+  low: 35.0
+  high: 55.0
+  critical_low: 20.0
+  critical_high: null
+  source_note: 成人通用参考区间35-55 g/L；危急值低值<20 g/L（共识性阈值，提示严重低蛋白血症风险）
+high_suggests:
+- condition: 脱水或血液浓缩可能
+  strength: medium
+  note: 严重脱水、休克等导致血浆容量减少时，白蛋白相对升高
+  description: 体液丢失导致血液浓缩，使蛋白浓度被动升高
+- condition: 输入白蛋白或血液制品后
+  strength: weak
+  note: 外源性补充可导致一过性升高
+  description: 医源性补充白蛋白后的检测结果变化
+low_suggests:
+- condition: 肝脏合成功能减退可能
+  strength: strong
+  note: 慢性肝炎、肝硬化等肝病时白蛋白合成减少，降低程度与病情严重性相关
+  description: 肝细胞受损导致蛋白质合成能力下降
+- condition: 营养不良或吸收障碍可能
+  strength: medium
+  note: 蛋白质摄入不足或消化吸收障碍可致白蛋白降低
+  description: 原料缺乏导致合成不足
+- condition: 肾病综合征可能
+  strength: medium
+  note: 尿中丢失大量蛋白导致低白蛋白血症
+  description: 肾小球滤过膜损伤导致蛋白从尿中流失
+- condition: 蛋白丢失性肠病可能
+  strength: weak
+  note: 肠道炎症或淋巴管阻塞导致蛋白从消化道丢失
+  description: 胃肠道异常丢失蛋白质
+- condition: 慢性消耗性疾病可能
+  strength: weak
+  note: 恶性肿瘤、甲状腺功能亢进、长期发热等消耗增加
+  description: 机体分解代谢增强，消耗增多
+- condition: 严重感染或创伤后恢复期可能
+  strength: weak
+  note: 应激状态下分解代谢增加，且血管通透性增加致白蛋白外渗
+  description: 急性时相反应导致白蛋白向血管外分布
+clusters:
+- 肝功能
+- 营养状态
+- 肾病筛查
+interventions:
+- level: lifestyle
+  text: 保证优质蛋白饮食（如蛋、奶、瘦肉、豆制品），均衡营养
+  timeframe: null
+  departments: []
+- level: recheck
+  text: 若轻度降低且无明显症状，建议2-4周后复查，同时复查肝功能全套
+  timeframe: 2-4周
+  departments:
+  - 消化内科
+  - 肝病科
+- level: specialist
+  text: 若持续降低或伴有水肿、黄疸、乏力等症状，建议专科就诊明确病因
+  timeframe: 2周内
+  departments:
+  - 消化内科
+  - 肝病科
+  - 肾内科
+- level: urgent
+  text: 若白蛋白低于20 g/L且伴有严重水肿、腹水或呼吸困难，需尽快就医
+  timeframe: 立即
+  departments:
+  - 急诊科
+  - 消化内科
+  - 肝病科
+departments:
+- 消化内科
+- 肝病科
+- 肾内科
+- 营养科
+narrative: 白蛋白是肝脏合成的主要血浆蛋白，半衰期约20天，是反映肝脏合成功能和营养状态的常用指标。白蛋白降低常见于慢性肝病（如肝硬化）、营养不良、肾病综合征及蛋白丢失性肠病等；升高多因脱水导致血液浓缩，临床意义相对有限。轻度降低且无其他异常时，可能与近期饮食不佳或检测波动有关，建议调整饮食后复查。若白蛋白持续明显降低，尤其是低于30
+  g/L时，常提示存在需要重视的基础疾病，应结合肝功能、尿蛋白等检查综合评估。本内容不构成医学诊断。
