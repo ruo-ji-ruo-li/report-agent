@@ -21,6 +21,8 @@ def test_compare_baseline_detects_regression():
     reg = compare_baseline({"f1": 0.8, "acc": 1.0}, {"f1": 0.9, "acc": 1.0})
     assert reg == ["f1"]
     assert compare_baseline({"f1": 0.95}, {"f1": 0.9}) == []
+    # 容差 0.05:单条 QA 的 LLM 波动(1/30≈0.033)属噪声,不算回退
+    assert compare_baseline({"refusal_correct": 0.9667}, {"refusal_correct": 1.0}) == []
 
 
 def test_guardrail_suspect_numeric_counts_numeric_not_safety():

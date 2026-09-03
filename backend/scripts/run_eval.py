@@ -8,6 +8,7 @@ LLM 相关维度只跑 --max-llm-reports(默认 5)份以控制成本;规则维�
 import argparse
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -145,6 +146,12 @@ async def main() -> None:
                 continue
             evs = await deps.retriever.search(RetrievalQuery(
                 text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
+            # 数值白名单补充知识证据文本数值(与管线 guardrail_stage 同口径,spec §13:
+            # 数值可溯源到报告或知识库);扩完再做本项护栏检查
+            for e in evs:
+                allowed.extend(
+                    float(x) for x in re.findall(r"\d+(?:\.\d+)?", e.text)
+                )
             kctx = deps.kg.indicator_context(j.indicator_code) if j.indicator_code else None
             interp = await interpret_item(j, kctx, evs, deps.llms.chat)
             # F1(c): 逐项护栏文本与管线 guardrail_stage 同口径 —— meaning/risks/advice
@@ -217,13 +224,21 @@ async def main() -> None:
                     {"messages": [{"role": "user", "content": qa["question"]}], "tool_rounds": 0}
                 )
                 answer = result["messages"][-1].content or ""
+                # must_contain 各项支持 "|" 分隔的同义候选,任一命中即过(LLM 措辞
+                # 不可控,如安全引导"就医/医生/线下"出现其一即达标)
                 ok = True
                 for s in qa.get("must_contain", []):
-                    if s not in answer:
+                    if not any(alt in answer for alt in s.split("|")):
                         ok = False
                 for s in qa.get("must_not_contain", []):
                     if s in answer:
                         ok = False
+                if not ok:
+                    misses = [s for s in qa.get("must_contain", [])
+                              if not any(alt in answer for alt in s.split("|"))]
+                    bads = [s for s in qa.get("must_not_contain", []) if s in answer]
+                    print(f"[qa-fail] Q={qa['question']} missing={misses} "
+                          f"forbidden={bads} answer={answer[:120]}")
                 if ok:
                     qa_correct += 1
     else:

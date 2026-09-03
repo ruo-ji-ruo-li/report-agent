@@ -3,6 +3,7 @@ Task 12 注册 retrieve/generate/plan,Task 13 注册 guardrail。
 每个阶段:读 ctx(db/checkpoints)→ 计算 → 写 db → 返回 checkpoint payload;失败抛异常。
 """
 import asyncio
+import re
 from dataclasses import dataclass, field
 
 from report_agent.observability import get_logger
@@ -240,6 +241,15 @@ async def guardrail_stage(ctx: StageContext) -> dict:
     report = ctx.report
     if report.get("age") is not None:
         allowed.append(float(report["age"]))
+    # 数值白名单补充知识库证据文本数值(spec §13:数值须可溯源到报告或知识库)。
+    # 解读合法引用 KG 知识中的阈值/区间(如"≥7.0 需进一步评估""5.2-6.2 边缘升高"),
+    # 不入白名单会让 rule_guardrail 对有出处数值大量误判 SUSPECT(实测 56 检中 45 触发)。
+    # 纯整数豁免仍独立生效,此处扩白名单主要覆盖知识文本中的小数阈值。
+    for evs in ctx.checkpoints.get("retrieve", {}).get("evidence", {}).values():
+        for e in evs:
+            allowed.extend(
+                float(x) for x in re.findall(r"\d+(?:\.\d+)?", e.get("text", ""))
+            )
     has_critical = any(j["critical"] for j in
                        ctx.checkpoints.get("compare", {}).get("judgments", []))
     sum_ctx = GuardrailContext(allowed_numbers=allowed, require_disclaimer=False,

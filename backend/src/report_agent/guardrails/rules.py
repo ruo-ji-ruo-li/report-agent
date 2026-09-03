@@ -46,9 +46,12 @@ def item_guardrail_text(meaning: str, risks: list[str] | None, advice: str) -> s
     return f"{meaning}\n风险提示:{'、'.join(risks or [])}\n建议:{advice}"
 
 
-# 免责/否定语境("不构成医学诊断""并非诊断结论"等):按句豁免,真实 smoke 确认
-# 合规免责句会被整词匹配误 BLOCK
-_DIAG_NEGATION_RE = re.compile(r"(?:不构成|不属于|并非|不是|避免|无法)[^。;;\n]{0,10}诊断|非诊断")
+# 免责/否定语境("不构成医学诊断""并非诊断结论""单次结果不能确诊"等):按句豁免,
+# 真实 smoke 与评测集确认合规免责句与否定句会被整词匹配误 BLOCK(实测 "不能确诊具体
+# 疾病""以明确诊断并制定方案"类正当表述被误杀;后者另由 interpret prompt 生成侧禁用)
+_DIAG_NEGATION_RE = re.compile(
+    r"(?:不构成|不属于|并非|不是|避免|无法|不能|未必)[^。;;\n]{0,10}(?:诊断|确诊)|非诊断"
+)
 
 
 def check_diagnosis(text: str) -> list[str]:

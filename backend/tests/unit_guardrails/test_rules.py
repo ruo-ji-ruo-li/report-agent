@@ -49,6 +49,14 @@ def test_diagnosis_negation_context_exempt():
     assert rule_guardrail("您可能被确诊为糖尿病。", ctx).verdict == Verdict.BLOCK
 
 
+def test_diagnosis_negation_covers_quediagnose():
+    # 评测集实测:解读中的正当否定句("单次结果不能确诊具体疾病")被"确诊"整词
+    # 匹配误 BLOCK —— 否定豁免需覆盖"确诊"且包含"不能/未必"
+    ctx = GuardrailContext(require_disclaimer=False)
+    assert rule_guardrail("单次结果不能确诊具体疾病。", ctx).verdict == Verdict.PASS
+    assert rule_guardrail("本检测未必能诊断出早期病变。", ctx).verdict == Verdict.PASS
+
+
 def test_numeric_consistency_exempts_plain_integers():
     # 真实 smoke:证据常识数字("禁食8小时""2型")被误判越界;带小数检验值仍严格
     ctx = GuardrailContext(allowed_numbers=[7.1])
