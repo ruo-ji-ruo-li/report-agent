@@ -48,4 +48,21 @@ describe('useChatSSE(spec-f §5.3)', () => {
     await send('s1', '问题')
     expect(turns.value[turns.value.length - 1].state).toBe('error')
   })
+
+  it('在途发送中重入 send 被忽略:streamSSE 仅调一次、无第二对 turns', async () => {
+    let release: () => void = () => {}
+    vi.mocked(streamSSE).mockImplementation(async () => {
+      await new Promise<void>(r => { release = r })
+    })
+    const { turns, send } = useChatSSE(async () => [])
+    const first = send('s1', '第一次')
+    const second = send('s1', '第二次') // send 未 resolve 时重入
+    expect(streamSSE).toHaveBeenCalledTimes(1)
+    expect(turns.value).toHaveLength(2) // 仅第一对 user/assistant
+    release()
+    await first
+    await second
+    expect(streamSSE).toHaveBeenCalledTimes(1)
+    expect(turns.value).toHaveLength(2) // 重入未追加第二对
+  })
 })

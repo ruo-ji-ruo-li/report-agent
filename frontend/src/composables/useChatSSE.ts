@@ -17,6 +17,7 @@ export function useChatSSE(
   }
 
   async function send(sessionId: string, content: string) {
+    if (sending.value) return // 重入守卫:在途发送中忽略新请求(composables 层约定固化)
     sending.value = true
     errorMsg.value = null
     turns.value = [...turns.value, ...startUserTurn(content)]
