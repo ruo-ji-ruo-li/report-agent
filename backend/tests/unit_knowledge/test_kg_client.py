@@ -187,3 +187,20 @@ def test_parse_conversions_handles_str_dict_and_garbage():
     assert _parse_conversions("not json") == {}
     assert _parse_conversions(None) == {}
     assert _parse_conversions("[]") == {}  # 合法 JSON 但非 dict
+
+
+def test_all_patterns_skips_incomplete_criteria(monkeypatch):
+    # 真实 smoke:成员指标未全部入库时 REQUIRES 边不全 → 按 criteria_json 基准跳过,防单条件误命中
+    recs = [
+        FakeRecord({"name": "代谢综合征倾向", "description": "d",
+                    "criteria_json": '[{"indicator_code": "TG", "direction": "high"}, '
+                                     '{"indicator_code": "HDL_C", "direction": "low"}, '
+                                     '{"indicator_code": "GLU", "direction": "high"}]',
+                    "criteria": [{"code": "GLU", "direction": "high"}]}),  # 3 基准 vs 1 边 → 跳过
+        FakeRecord({"name": "完整模式", "description": "d", "criteria_json": None,
+                    "criteria": [{"code": "GLU", "direction": "high"}]}),  # 无基准 → 不校验
+        FakeRecord({"name": "空模式", "description": "d", "criteria_json": "[]",
+                    "criteria": []}),  # 基准 0 == 边 0 → 保留
+    ]
+    c = _client(FakeDriver({"all": recs}), monkeypatch)
+    assert [p.name for p in c.all_patterns()] == ["完整模式", "空模式"]

@@ -46,8 +46,18 @@ def item_guardrail_text(meaning: str, risks: list[str] | None, advice: str) -> s
     return f"{meaning}\n风险提示:{'、'.join(risks or [])}\n建议:{advice}"
 
 
+# 免责/否定语境("不构成医学诊断""并非诊断结论"等):按句豁免,真实 smoke 确认
+# 合规免责句会被整词匹配误 BLOCK
+_DIAG_NEGATION_RE = re.compile(r"(?:不构成|不属于|并非|不是|避免|无法)[^。;;\n]{0,10}诊断|非诊断")
+
+
 def check_diagnosis(text: str) -> list[str]:
-    return [f"诊断用语: {t}" for t in DIAGNOSIS_TERMS if t in text]
+    findings = []
+    for sentence in re.split(r"[。;;\n]", text):
+        if _DIAG_NEGATION_RE.search(sentence):
+            continue
+        findings.extend(f"诊断用语: {t}" for t in DIAGNOSIS_TERMS if t in sentence)
+    return findings
 
 
 def check_medication(text: str) -> list[str]:
@@ -72,12 +82,17 @@ def check_numeric_consistency(text: str, allowed: list[float]) -> list[str]:
     allowed_set = {round(x, 6) for x in allowed}
     violations = []
     for m in NUM_RE.finditer(text):
+        s = m.group()
+        # 纯整数豁免(无小数点):证据/常识表述("禁食8小时""2型")在真实 smoke 中被误判;
+        # 检验值口径(带小数,如 7.1)仍严格校验
+        if "." not in s:
+            continue
         try:
-            v = float(m.group())
+            v = float(s)
         except ValueError:
             continue
         if round(v, 6) not in allowed_set:
-            violations.append(f"越界数值: {m.group()}")
+            violations.append(f"越界数值: {s}")
     return violations
 
 

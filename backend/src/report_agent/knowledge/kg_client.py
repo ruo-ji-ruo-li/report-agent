@@ -196,17 +196,34 @@ class KGClient:
     def all_patterns(self) -> list[PatternSpec]:
         rows = self._query(
             "MATCH (p:Pattern) OPTIONAL MATCH (p)-[r:REQUIRES]->(i:Indicator) "
-            "RETURN p.name AS name, p.description AS description, "
+            "RETURN p.name AS name, p.description AS description, p.criteria_json AS criteria_json, "
             "COLLECT({code: i.code, direction: r.direction}) AS criteria"
         )
-        return [
-            PatternSpec(
-                name=r["name"], description=r.get("description") or "",
-                criteria=[
-                    PatternCriterion(indicator_code=c["code"], direction=c["direction"])
-                    for c in r.get("criteria", [])
-                    if c.get("code")
-                ],
-            )
-            for r in rows
-        ]
+        out = []
+        for r in rows:
+            criteria = [
+                PatternCriterion(indicator_code=c["code"], direction=c["direction"])
+                for c in r.get("criteria", [])
+                if c.get("code")
+            ]
+            # 完整性防线:REQUIRES 边只会在成员指标已入库时建立(导入顺序无关);
+            # 边数与 criteria_json 基准不一致 → 该模式数据未就绪,跳过以防单条件误命中。
+            # criteria_json 缺失(None,旧数据)视为无基准,不校验(向后兼容)
+            raw_json = r.get("criteria_json")
+            baseline = None
+            if raw_json is not None:
+                try:
+                    baseline = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    log.warning("pattern_criteria_json_invalid", pattern=r["name"])
+                    continue
+            if isinstance(baseline, list) and len(baseline) != len(criteria):
+                log.warning(
+                    "pattern_criteria_incomplete",
+                    pattern=r["name"], expected=len(baseline), found=len(criteria),
+                )
+                continue
+            out.append(PatternSpec(
+                name=r["name"], description=r.get("description") or "", criteria=criteria,
+            ))
+        return out

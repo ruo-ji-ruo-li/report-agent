@@ -106,7 +106,10 @@ def _attach_departments(session, seed) -> None:
 
 def upsert_pattern(session, seed) -> None:
     session.run(
-        "MERGE (p:Pattern {name: $name}) SET p.description=$desc", name=seed.name, desc=seed.description
+        # criteria_json 是模式完整性基准:成员指标未全部入库时读侧据此判别并跳过(防单条件误命中)
+        "MERGE (p:Pattern {name: $name}) SET p.description=$desc, p.criteria_json=$json",
+        name=seed.name, desc=seed.description,
+        json=json.dumps(seed.criteria, ensure_ascii=False),
     )
     session.run(
         "MATCH (p:Pattern {name: $name})-[r:REQUIRES]->(:Indicator) DELETE r", name=seed.name

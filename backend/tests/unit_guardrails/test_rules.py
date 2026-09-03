@@ -38,3 +38,21 @@ def test_critical_warning_required():
     r = rule_guardrail("血糖危急,请关注。\n本内容不构成医学诊断。",
                        _ctx(require_critical_warning=True))
     assert r.verdict == Verdict.BLOCK  # 缺"尽快就医"强提醒
+
+
+def test_diagnosis_negation_context_exempt():
+    # 真实 smoke:合规免责句("不构成医学诊断""并非诊断结论")被整词匹配误 BLOCK
+    ctx = GuardrailContext(require_disclaimer=False)
+    assert rule_guardrail("这不是诊断结论,仅为风险提示。", ctx).verdict == Verdict.PASS
+    assert rule_guardrail("本内容不构成医学诊断。", ctx).verdict == Verdict.PASS
+    # 肯定语境仍 BLOCK
+    assert rule_guardrail("您可能被确诊为糖尿病。", ctx).verdict == Verdict.BLOCK
+
+
+def test_numeric_consistency_exempts_plain_integers():
+    # 真实 smoke:证据常识数字("禁食8小时""2型")被误判越界;带小数检验值仍严格
+    ctx = GuardrailContext(allowed_numbers=[7.1])
+    assert rule_guardrail("请禁食8小时后再查,可能与2型糖尿病相关。\n本内容不构成医学诊断。",
+                          ctx).verdict == Verdict.PASS
+    assert rule_guardrail("您的血糖 9.9 mmol/L 偏高。\n本内容不构成医学诊断。",
+                          ctx).verdict == Verdict.SUSPECT

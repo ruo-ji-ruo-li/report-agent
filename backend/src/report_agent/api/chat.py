@@ -36,7 +36,12 @@ async def send_message(session_id: str, body: ChatIn, request: Request):
     async def gen():
         async for item in sse_stream(graph, request.app.state.deps, session_id,
                                      body.content, session["report_id"]):
-            yield {"event": item["event"], "data": json.dumps(item["data"], ensure_ascii=False)}
+            # token 是纯文本增量,直接发原文(dumps 会把它变成带引号转义的 JSON 字符串,
+            # 真实 smoke 中前端拼接出 "我来""帮" 的引号伪影);结构化事件仍序列化为 JSON
+            data = item["data"] if item["event"] == "token" else json.dumps(
+                item["data"], ensure_ascii=False
+            )
+            yield {"event": item["event"], "data": data}
 
     return EventSourceResponse(gen())
 
