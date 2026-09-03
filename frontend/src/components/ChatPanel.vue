@@ -11,7 +11,7 @@ const props = defineProps<{ reportId: string }>()
 const sessionId = ref<string | null>(null)
 const input = ref('')
 const listRef = ref<HTMLElement | null>(null)
-const { turns, sending, errorMsg, init, send } = useChatSSE(getChatHistory)
+const { turns, sending, init, send } = useChatSSE(getChatHistory)
 
 onMounted(async () => {
   try {
@@ -47,7 +47,6 @@ async function doSend() {
           <div v-for="(e, k) in t.evidence" :key="k" class="evidence-item">{{ e }}</div>
         </div>
       </div>
-      <div v-if="errorMsg" class="error-line">{{ errorMsg }}</div>
     </div>
     <div class="chat-input hairline-top">
       <el-input v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }"
@@ -71,9 +70,13 @@ async function doSend() {
   background: var(--c-paper);
   border: 1px solid var(--c-hairline);
 }
-.turn.user .bubble { background: var(--c-mist); border: none; }
+.turn.user .bubble {
+  background: var(--c-mist);
+  border: none;
+  white-space: pre-wrap; /* 输入框支持 Shift+Enter 多行;user 气泡为裸插值,需 pre-wrap 保留换行 */
+}
 .tool-line { font-size: 12px; opacity: 0.5; margin-bottom: var(--space-8); }
-.safety-note, .error-note, .error-line { font-size: 12px; opacity: 0.6; margin-top: var(--space-8); }
+.safety-note, .error-note { font-size: 12px; opacity: 0.6; margin-top: var(--space-8); }
 .evidence { max-width: 75%; margin-top: var(--space-8); font-size: 12px; opacity: 0.6; }
 .chat-input { display: flex; gap: var(--space-8); padding-top: var(--space-16); align-items: flex-end; }
 </style>

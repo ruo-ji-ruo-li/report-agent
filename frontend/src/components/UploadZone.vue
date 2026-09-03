@@ -18,9 +18,10 @@ async function handleFile(file: File) {
   try {
     const { report_id, task_id } = await createReportFromFile(file)
     emit('uploaded', { reportId: report_id, taskId: task_id, source: sourceOf(file) })
-  } catch {
+  } catch (err) {
     // 失败文案渲染在拖拽区内部(brief 接口注释 + 测试都以组件内 DOM 为准;
     // ElMessage 服务挂到 document.body,组件 test 不可见,故弃用)
+    console.error('upload_failed', err) // 原始异常落 console,便于线上排障(spec-f §7)
     errorMessage.value = '这份文件没能解读出来。换一张更清晰的照片,或改用手动录入。'
   } finally {
     uploading.value = false

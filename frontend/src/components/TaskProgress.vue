@@ -29,7 +29,7 @@ const elapsed = computed(() =>
       <template v-for="(s, i) in STAGES" :key="s.key">
         <span class="stage-seg" :class="{
           done: info.completed_stages.includes(s.key),
-          current: i === currentIndex,
+          pulse: i === currentIndex,
         }" />
         <span v-if="i < STAGES.length - 1" class="stage-gap" />
       </template>
@@ -46,7 +46,9 @@ const elapsed = computed(() =>
 .stage-seg { flex: 1; height: 4px; border-radius: 2px; background: var(--c-hairline); }
 .stage-gap { width: 4px; }
 .stage-seg.done { background: var(--c-clinical); }
-.stage-seg.current { background: var(--c-clinical); animation: pulse 1.2s ease-in-out infinite; }
+/* 动画类挂 pulse(而非 current):base.css 的 prefers-reduced-motion 规则只杀 .pulse,
+   类名对齐后该可访问性规则才真正生效(spec-f §10 验收项) */
+.stage-seg.pulse { background: var(--c-clinical); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 .stage-meta { display: flex; justify-content: space-between; font-size: 13px; opacity: 0.6; margin-top: var(--space-8); }
 </style>

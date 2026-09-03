@@ -10,7 +10,6 @@ export function useChatSSE(
 ) {
   const turns = ref<ChatTurn[]>([])
   const sending = ref(false)
-  const errorMsg = ref<string | null>(null)
 
   function init(rows: ChatMessageRow[]) {
     turns.value = turnsFromHistory(rows)
@@ -19,7 +18,6 @@ export function useChatSSE(
   async function send(sessionId: string, content: string) {
     if (sending.value) return // 重入守卫:在途发送中忽略新请求(composables 层约定固化)
     sending.value = true
-    errorMsg.value = null
     turns.value = [...turns.value, ...startUserTurn(content)]
     const ac = new AbortController()
     try {
@@ -38,21 +36,40 @@ export function useChatSSE(
     }
   }
 
+  /** 把在途半截的 streaming 末条标为 error(气泡 error-note 提示重试,保留提问) */
+  function markStreamingError() {
+    turns.value = turns.value.map(t =>
+      t.state === 'streaming' ? { ...t, state: 'error' as const } : t,
+    )
+  }
+
   async function syncHistory(sessionId: string) {
     try {
       const rows = await fetchHistory(sessionId)
       const last = turns.value[turns.value.length - 1]
       // 仅当本地末条仍是 streaming(未收到 done)时覆盖;否则保留已完成的流
       if (last && last.state === 'streaming') {
-        turns.value = turnsFromHistory(rows)
+        // 本轮回答缺失判定(spec-f §5.3):rows 里从末往前找本地发送的 user 文本,
+        // 找不到,或找到但无随后的 assistant 行 → 服务端流中途崩、回答未持久化:
+        // 不替换本地视图,保留提问并把半截末条标 error;否则完整回答已入库 → 历史覆盖
+        const asked = turns.value[turns.value.length - 2]
+        let hit = -1
+        if (asked && asked.role === 'user') {
+          for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].role === 'user' && rows[i].content === asked.text) { hit = i; break }
+          }
+        }
+        const answered = hit !== -1 && hit + 1 < rows.length && rows[hit + 1].role === 'assistant'
+        if (answered) {
+          turns.value = turnsFromHistory(rows)
+        } else {
+          markStreamingError()
+        }
       }
     } catch {
-      turns.value = turns.value.map(t =>
-        t.state === 'streaming' ? { ...t, state: 'error' as const } : t,
-      )
-      errorMsg.value = '生成失败,请重试'
+      markStreamingError() // 拉取本身失败:同样保留本地、末条标 error(文案由气泡 error-note 呈现)
     }
   }
 
-  return { turns, sending, errorMsg, init, send }
+  return { turns, sending, init, send }
 }

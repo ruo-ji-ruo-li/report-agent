@@ -55,7 +55,7 @@ const STATUS_TEXT: Record<string, string> = {
       <p v-if="recent.length === 0" class="recent-empty">还没有报告,先上传第一份吧。</p>
       <div v-for="r in recent" :key="r.id" class="recent-row hairline-top">
         <span class="recent-main" @click="router.push(`/report/${r.id}`)">
-          <span class="recent-name">{{ r.institution || '手动录入' }}</span>
+          <span class="recent-name">{{ r.institution || (r.source === 'manual' ? '手动录入' : '体检报告') }}</span>
           <span class="recent-date">{{ r.created_at.slice(0, 10) }}</span>
           <span class="recent-status" :class="`st-${r.status ?? 'pending'}`">
             {{ STATUS_TEXT[r.status ?? 'pending'] }}

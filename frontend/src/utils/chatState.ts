@@ -54,7 +54,12 @@ export function applyChatEvent(turns: ChatTurn[], ev: SSEChatEvent): ChatTurn[] 
       next = { ...last, state: 'error' }
       break
     case 'done':
-      next = { ...last, state: 'done', guardrail: ev.data.guardrail }
+      // BLOCK 场景后端先发 safety 事件、随后同帧 done(guardrail:'block'):末条已是
+      // safety 时保留该态只落 guardrail,否则实时流中的"经安全校验"标记被 done 覆盖,
+      // 要刷新后经 turnsFromHistory 才重现,前后行为不一致(spec-f §4.3)
+      next = last.state === 'safety'
+        ? { ...last, guardrail: ev.data.guardrail }
+        : { ...last, state: 'done', guardrail: ev.data.guardrail }
       break
   }
   return [...turns.slice(0, idx), next]

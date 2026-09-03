@@ -82,9 +82,17 @@ async function startPolling() {
   if (!detail.value?.task) return
   poller.start(detail.value.task.id, {
     onUpdate: async info => { taskInfo.value = info; await refreshDetail() },
-    onAwaitingMeta: async info => { taskInfo.value = info; await refreshDetail() },
+    onAwaitingMeta: async info => {
+      taskInfo.value = info
+      await refreshDetail()
+      updateRecent() // awaiting_meta 也是终态之一:不同步则首页条目永远显示旧状态
+    },
     onDone: async () => { await refreshDetail(); updateRecent(); await loadDocs() },
-    onFailed: async info => { taskInfo.value = info; await refreshDetail() },
+    onFailed: async info => {
+      taskInfo.value = info
+      await refreshDetail()
+      updateRecent() // failed 同理:首页条目停在"解读中"误导用户
+    },
   })
 }
 

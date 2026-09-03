@@ -42,6 +42,19 @@ describe('useChatSSE(spec-f §5.3)', () => {
     expect(turns.value.every(t => t.state === 'done')).toBe(true)
   })
 
+  it('history 缺本轮回答(服务端流中途崩未入库):不覆盖本地,末条标 error、提问保留', async () => {
+    vi.mocked(streamSSE).mockRejectedValue(new Error('network'))
+    const oldHistory: ChatMessageRow[] = [
+      { role: 'user', content: '早前的问题', guardrail_flags: null, created_at: null },
+      { role: 'assistant', content: '早前的回答', guardrail_flags: null, created_at: null },
+    ]
+    const { turns, init, send } = useChatSSE(async () => oldHistory) // 历史不含本轮提问/回答
+    init(oldHistory)
+    await send('s1', '新提问')
+    expect(turns.value[turns.value.length - 1].state).toBe('error') // 半截 streaming 末条标 error
+    expect(turns.value.map(t => t.text)).toContain('新提问')           // 提问气泡不消失
+  })
+
   it('history 不可用时将 streaming 末条标记为 error', async () => {
     vi.mocked(streamSSE).mockRejectedValue(new Error('network'))
     const { turns, send } = useChatSSE(async () => { throw new Error('db down') })

@@ -30,6 +30,14 @@ describe('startUserTurn / applyChatEvent', () => {
     expect(t[1]).toMatchObject({ text: '本条回答未通过内容安全校验。', state: 'safety' })
   })
 
+  it('safety 后同帧 done(BLOCK):保留 safety 态不被覆盖,guardrail 落 block', () => {
+    let t = startUserTurn('x')
+    t = applyChatEvent(t, { event: 'safety', data: '本条回答经安全校验调整。' })
+    t = applyChatEvent(t, { event: 'done', data: { session_id: 's1', guardrail: 'block' } })
+    expect(t[1]).toMatchObject({ state: 'safety', guardrail: 'block' })
+    expect(t[1].text).toBe('本条回答经安全校验调整。')
+  })
+
   it('error 事件标记错误态;done 记录 guardrail', () => {
     let t = startUserTurn('x')
     t = applyChatEvent(t, { event: 'error', data: '生成失败' })
