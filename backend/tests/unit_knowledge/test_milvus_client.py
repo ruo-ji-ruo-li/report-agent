@@ -53,6 +53,10 @@ class FakeMilvus:
 
     def insert(self, collection_name, data):
         self.rows.extend(data)
+        self.flushed = False
+
+    def flush(self, collection_name):
+        self.flushed = True
 
     def delete(self, collection_name, filter):
         self.deleted_filters.append(filter)
@@ -92,6 +96,9 @@ def test_ensure_collection_creates_dense_and_sparse_index(monkeypatch):
     assert fake.index_entries  # 有索引定义
     types = {e["index_type"] for e in fake.index_entries}
     assert {"HNSW", "SPARSE_INVERTED_INDEX"} <= types
+    # BM25 Function 输出字段的 metric 服务端强制为 BM25(真实 2.5.14 校验,IP 被拒)
+    sparse_metric = {e["metric_type"] for e in fake.index_entries if e["field_name"] == "sparse_vec"}
+    assert sparse_metric == {"BM25"}
 
 
 def test_ensure_collection_idempotent(monkeypatch):
@@ -115,6 +122,7 @@ def test_upsert_and_delete_entity(monkeypatch):
     store.upsert_chunks([_chunk()], dense_embeddings=[[0.1] * 1024])
     assert fake.rows[0]["chunk_id"] == "c1"
     assert "sparse_vec" not in fake.rows[0]  # 稀疏向量由 BM25 Function 自动生成,不手工传
+    assert fake.flushed  # insert 后必须 flush,否则 Bounded 一致性下 search 看不到新数据
     store.delete_entity("indicator", "GLU")
     assert fake.deleted_filters[0] == "entity_type == 'indicator' and entity_id == 'GLU'"
 

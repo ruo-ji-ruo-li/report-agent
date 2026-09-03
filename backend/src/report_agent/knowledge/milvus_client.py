@@ -82,7 +82,8 @@ class MilvusStore:
             params={"M": 16, "efConstruction": 200},
         )
         index_params.add_index(
-            field_name="sparse_vec", index_type="SPARSE_INVERTED_INDEX", metric_type="IP",
+            # BM25 Function 输出字段的 metric 服务端强制为 BM25(真实 2.5.14 校验,IP 被拒 1100)
+            field_name="sparse_vec", index_type="SPARSE_INVERTED_INDEX", metric_type="BM25",
         )
         self._client.create_index(self.collection, index_params=index_params)
         self._client.load_collection(self.collection)
@@ -105,6 +106,9 @@ class MilvusStore:
             for c, emb in zip(chunks, dense_embeddings, strict=True)
         ]
         self._client.insert(self.collection, rows)
+        # flush 保证数据持久化并对 search 立即可见(Bounded 一致性下未 flush 的新数据检索不到,
+        # 真实 2.5.14 验证确认);增量更新后立即可查是验收标准 5 的必要语义。
+        self._client.flush(self.collection)
         log.info("milvus_upsert", count=len(rows))
 
     def delete_entity(self, entity_type: str, entity_id: str) -> None:
@@ -113,6 +117,7 @@ class MilvusStore:
         self._client.delete(
             self.collection, filter=f"entity_type == '{entity_type}' and entity_id == '{entity_id}'"
         )
+        self._client.flush(self.collection)
 
     def search_dense(self, embedding: list[float], top_k: int) -> list[ScoredChunk]:
         res = self._client.search(
