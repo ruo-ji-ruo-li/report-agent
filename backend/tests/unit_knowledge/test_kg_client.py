@@ -177,3 +177,13 @@ def test_indicator_context_falls_back_name_to_code(monkeypatch):
     ctx = c.indicator_context("GLU")
     assert ctx.code == "GLU"
     assert ctx.name == "GLU"
+
+
+def test_parse_conversions_handles_str_dict_and_garbage():
+    from report_agent.knowledge.kg_client import _parse_conversions
+
+    assert _parse_conversions('{"mg/dL": 0.0555}') == {"mg/dL": 0.0555}  # Neo4j JSON 字符串
+    assert _parse_conversions({"mg/dL": 0.0555}) == {"mg/dL": 0.0555}  # 旧 dict 数据直读
+    assert _parse_conversions("not json") == {}
+    assert _parse_conversions(None) == {}
+    assert _parse_conversions("[]") == {}  # 合法 JSON 但非 dict

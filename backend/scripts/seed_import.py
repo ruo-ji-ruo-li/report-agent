@@ -7,6 +7,7 @@
 """
 import argparse
 import asyncio
+import json
 from pathlib import Path
 
 import yaml
@@ -21,7 +22,9 @@ def upsert_indicator(session, seed) -> None:
         "MERGE (i:Indicator {code: $code}) SET i.name=$name, i.aliases=$aliases, i.unit=$unit, "
         "i.unit_conversions=$conv, i.category=$category, i.description=$description",
         code=seed.code, name=seed.name, aliases=seed.aliases, unit=seed.unit,
-        conv=seed.unit_conversions, category=seed.category, description=seed.description,
+        # Neo4j 属性只接受原始类型/原始类型数组:嵌套 dict 序列化为 JSON 字符串存储(读侧解析)
+        conv=json.dumps(seed.unit_conversions, ensure_ascii=False), category=seed.category,
+        description=seed.description,
     )
     # 出边收敛(I1):种子 YAML 删除/改名某项后重跑本实体,旧提示/簇/建议边全部移除再重建。
     # 只删 Indicator 的出边;Condition/Cluster/Intervention/Department 是共享节点,不删。

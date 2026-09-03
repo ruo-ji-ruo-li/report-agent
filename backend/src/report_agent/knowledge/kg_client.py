@@ -3,6 +3,7 @@
 约定:driver 不可用/查询失败一律降级为返回空结果并记 error 日志,
 上层(RRF/规则)自然吸收空结果——spec §11 降级总览。
 """
+import json
 from dataclasses import dataclass, field
 
 from neo4j import GraphDatabase
@@ -82,6 +83,19 @@ def check_neo4j(uri: str, user: str, password: str) -> bool:
     return True
 
 
+def _parse_conversions(raw) -> dict[str, float]:
+    """unit_conversions 兼容解析:Neo4j 不存嵌套 Map,写侧序列化为 JSON 字符串;dict 为旧数据直读。"""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
 class KGClient:
     def __init__(self, uri: str, user: str, password: str, database: str = "neo4j"):
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
@@ -109,7 +123,7 @@ class KGClient:
         return [
             IndicatorEntry(
                 code=r["code"], name=r["name"], aliases=r.get("aliases") or [],
-                unit=r.get("unit"), unit_conversions=r.get("unit_conversions") or {},
+                unit=r.get("unit"), unit_conversions=_parse_conversions(r.get("unit_conversions")),
                 category=r.get("category"), description=r.get("description"),
             )
             for r in rows
