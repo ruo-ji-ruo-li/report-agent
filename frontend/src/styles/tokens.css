@@ -1,0 +1,18 @@
+/* src/styles/tokens.css —— 全站唯一色值来源,组件内不得硬编码 */
+:root {
+  --c-paper: #F5F6F3;
+  --c-ink: #28323A;
+  --c-cover: #1F2A28;
+  --c-clinical: #0E6F6D;
+  --c-amber: #A16207;
+  --c-brick: #B3412E;
+  --c-hairline: #DFE3DF;
+  --c-mist: #E8EFEC;
+
+  --font-display: 'Noto Serif SC', SimSun, serif;          /* 封面带 + 章节标题 */
+  --font-body: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --font-mono: Consolas, ui-monospace, 'Courier New', monospace; /* 化验数值 */
+
+  --space-8: 8px; --space-16: 16px; --space-48: 48px;
+  --col-width: 920px;
+}

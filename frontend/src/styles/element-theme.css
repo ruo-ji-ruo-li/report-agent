@@ -1,0 +1,8 @@
+/* src/styles/element-theme.css —— Element Plus 主题映射(spec-f §8.4) */
+:root {
+  --el-color-primary: #0E6F6D;
+  --el-color-warning: #A16207;
+  --el-color-danger: #B3412E;
+  --el-border-radius-base: 4px;
+  --el-font-family: var(--font-body);
+}

@@ -1,0 +1,18 @@
+/* src/styles/base.css —— 基础版式 */
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--c-paper);
+  color: var(--c-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.8;
+}
+#app { min-height: 100vh; }
+*:focus-visible { outline: 2px solid var(--c-clinical); outline-offset: 2px; }
+.hairline-top { border-top: 1px solid var(--c-hairline); }
+.page-col { max-width: var(--col-width); margin: 0 auto; padding: 0 var(--space-16); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none !important; }
+}
