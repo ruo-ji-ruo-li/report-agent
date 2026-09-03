@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # 解析
     unstructured_strategy: str = "hi_res"
     unstructured_infer_table: bool = True
+    # hi_res 表格重建走 tesseract OCR(不走 PDF 文字层):默认 eng 会把中文识别为乱码拉丁
+    unstructured_ocr_languages: list[str] = ["chi_sim", "eng"]
     parse_min_items: int = 3
 
     # 上传

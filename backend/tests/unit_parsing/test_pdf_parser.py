@@ -5,8 +5,9 @@ from report_agent.parsing.pdf_parser import parse_pdf_text
 class FakeTableElement:
     category = "Table"
 
-    def __init__(self, html):
+    def __init__(self, html, text=""):
         self.metadata = type("M", (), {"text_as_html": html})()
+        self.text = text
 
 
 class FakeTextElement:
@@ -52,3 +53,37 @@ def test_parse_pdf_text_extracts_meta_from_narrative(monkeypatch):
     _, meta = parse_pdf_text("x.pdf", Settings(parse_min_items=0))
     assert meta.sex == "male" and meta.age == 45.0
     assert meta.institution == "某某医院"
+
+
+def test_parse_pdf_text_passes_ocr_languages(monkeypatch):
+    # hi_res 表格重建走 OCR:语言必须可配(默认 eng 会把中文识别为乱码拉丁,真实环境已踩)
+    captured = {}
+
+    def fake(elements):
+        def _p(**kw):
+            captured.update(kw)
+            return elements
+        return _p
+
+    monkeypatch.setattr(
+        "report_agent.parsing.pdf_parser.partition_pdf",
+        fake([FakeTableElement("<table><tr><td>某项</td><td>6.2</td></tr></table>")]),
+    )
+    parse_pdf_text("x.pdf", Settings(parse_min_items=1))
+    assert captured["languages"] == ["chi_sim", "eng"]
+    assert captured["strategy"] == "hi_res"
+
+
+def test_parse_pdf_text_extracts_meta_from_table_region(monkeypatch):
+    # hi_res 布局检测常把元信息行(姓名/性别/年龄)与检验表合并为同一 Table 区域:
+    # meta 需能从表内非数据行提取(真实 hi_res 解析已踩)
+    html = (
+        "<table><tr><td>姓名: 张三</td><td>性别: 男</td><td>年龄: 45 岁</td></tr>"
+        "<tr><td>空腹血糖</td><td>7.1</td><td>mmol/L</td><td>3.9-6.1</td></tr></table>"
+    )
+    monkeypatch.setattr(
+        "report_agent.parsing.pdf_parser.partition_pdf", _fake_partition([FakeTableElement(html)])
+    )
+    items, meta = parse_pdf_text("x.pdf", Settings(parse_min_items=1))
+    assert meta.sex == "male" and meta.age == 45.0
+    assert any(i.name == "空腹血糖" and i.value_num == 7.1 for i in items)

@@ -83,14 +83,27 @@ def parse_pdf_text(path: str, settings: Settings) -> tuple[list[RawReportItem], 
         filename=path,
         strategy=settings.unstructured_strategy,
         infer_table_structure=settings.unstructured_infer_table,
+        languages=settings.unstructured_ocr_languages,
     )
     items, meta = [], ReportMeta(source="pdf")
     for el in elements:
         if el.category == "Table":
-            for cells in _cell_texts(el.metadata.text_as_html or ""):
+            table_html = el.metadata.text_as_html or ""
+            for cells in _cell_texts(table_html):
                 item = _row_to_item(cells)
                 if item:
                     items.append(item)
+                else:
+                    # 体检报告的元信息行(姓名/性别/年龄)常与检验表合并为同一 Table
+                    # 区域(hi_res 布局检测实测如此):行不是数据项时,行文本仍可能
+                    # 携带 meta,逐行尝试提取(_extract_meta 对已填字段幂等)
+                    _extract_meta(" ".join(cells), meta)
+            if meta.sex is None or meta.age is None:
+                # 表格重建的 OCR cell 切分碎(实测"性别"可被误识为"PER:"),meta 兜底
+                # 优先用表格文字层文本(电子 PDF 有完整文字层);无文字层时退回去标签
+                # 的表格 HTML
+                _extract_meta(el.text or "", meta)
+                _extract_meta(re.sub(r"<[^>]+>", " ", table_html), meta)
         else:
             _extract_meta(el.text or "", meta)
     if len(items) < settings.parse_min_items:
