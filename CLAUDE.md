@@ -34,8 +34,9 @@ cp .env.example .env        # fill DEEPSEEK_API_KEY and EMBEDDING_API_KEY
 uv sync
 uv run alembic upgrade head
 
-# run the API
-uv run uvicorn report_agent.api.app:create_app --factory --port 8000
+# run the API — one command: idempotent alembic upgrade head, then uvicorn
+uv run python scripts/serve.py                # --host/--port/--skip-migration available
+uv run uvicorn report_agent.api.app:create_app --factory --port 8000   # serve only, no migration
 
 # lint / tests
 uv run ruff check src tests scripts
