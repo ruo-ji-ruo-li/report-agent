@@ -2,16 +2,20 @@
 
 上传体检报告 → 结构化解析 → 异常判定 → 四段式解读(总体结论/逐项解读/分级建议/免责声明)→ 结构化复查计划;
 并支持基于本人报告的多轮追问(SSE 流式)。产品定位为报告解读 + 健康建议,**不构成医学诊断**。
+提供 Web 界面(上传/手动录入、任务进度、四段式解读与追问聊天,仅桌面端)。
 
 ## 目录
 
 - `docs/requirements.md` — 需求文档
 - `docs/superpowers/specs/2026-09-02-report-agent-design.md` — 系统设计(spec)
+- `docs/superpowers/specs/2026-09-03-report-agent-frontend-design.md` — 前端设计(spec-f)
 - `docs/superpowers/plans/2026-09-02-report-agent.md` — 本实现规划
 - `backend/` — 后端(FastAPI + LangGraph + Neo4j + Milvus + PostgreSQL)
-- `frontend/` — 前端(预留,本期不实现,见 `frontend/README.md`)
+- `frontend/` — 前端(Vue 3 + Vite + TypeScript + Element Plus,见 `frontend/README.md`)
 
 ## 快速开始
+
+### 后端
 
 > 冒烟与评测命令依赖真实基础设施(docker compose 服务)与 LLM key,请在具备条件的机器上执行;
 > 纯代码验证以 `uv run pytest` 与 `uv run ruff check src tests scripts` 为准。
@@ -40,6 +44,24 @@ uv run python scripts/run_eval.py                      # 回归门禁,人工确�
 - alembic 连接串由 `env.py` 以 `POSTGRES_DSN` 覆写,不读 `alembic.ini` 里的占位行。
 - `seed_import.py --entity GLU` 等单实体增量入库(MERGE / delete+insert),不触发全量重建。
 
+### 前端
+
+需 Node ≥ 20 与 pnpm,后端已在 `http://localhost:8000` 启动:
+
+```bash
+cd frontend
+pnpm install
+pnpm run dev      # http://localhost:5173;dev 代理 /api → 后端(后端无 CORS,代理直接绕开)
+pnpm test         # Vitest 单测(纯函数为主,无需真实后端)
+pnpm run build    # vue-tsc 类型检查 + vite 产物 dist/(可任意静态服务器部署)
+```
+
+要点:
+
+- 代理目标可用 `VITE_API_TARGET=http://other:8000 pnpm run dev` 覆盖;生产部署走反代同源挂载 `/api`,无跨域问题。
+- 页面:`/` 首页(上传 PDF/照片 或 手动录入 tab、最近报告列表)→ `/report/:id` 报告详情(任务进度带 → 四段式解读 / 复查计划 / 追问 SSE 三 tab);`*` 为 404。
+- 后端返回的解读四段、安全话术、免责声明**原样渲染**,前端不改写(视觉与交互约束见前端 spec-f §6/§7)。
+
 ## API
 
 端点以代码为准(`backend/src/report_agent/api/` 下 `health / reports / tasks / chat` 四个 router)。
@@ -66,6 +88,8 @@ GET /api/reports/{id}/interpretation + /followup-plan →
 POST /api/reports/{id}/chat/sessions → POST /api/chat/sessions/{sid}/messages(SSE)
 ```
 
+(前端界面即按此链路实现:上传/录入 → 轮询进度 → 阅读解读与复查计划 → 追问。)
+
 ## 验收标准对照(spec §7)
 
 1. PDF/拍照端到端 → `scripts/smoke.py`
@@ -73,3 +97,4 @@ POST /api/reports/{id}/chat/sessions → POST /api/chat/sessions/{sid}/messages(
 3. 降级路径演示 → `docker stop report-neo4j` 后重跑 smoke(解读仍产出)
 4. 知识库外拒答 → smoke 第 6 步 + 评测 QA 拒答类
 5. 增量更新 → `seed_import.py --entity GLU`(单实体 delete+insert / MERGE,不触发全量重建)
+6. 前端链路 → 前端 spec-f §10 验收清单(上传/手动录入、awaiting_meta 补录恢复、进度带、四段解读原样渲染、追问 SSE、最近报告);以 `pnpm test` 与 `pnpm run build` 通过为底线

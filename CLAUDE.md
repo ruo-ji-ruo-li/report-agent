@@ -16,7 +16,7 @@ Docs:
 ## Layout
 
 - `backend/` — the entire deliverable: FastAPI + LangGraph + Neo4j + Milvus + PostgreSQL. Python ≥3.12, `uv`-managed (uv.lock), hatchling build, src-layout (`backend/src/report_agent`).
-- `frontend/` — intentionally empty placeholder; not in scope this phase (see `frontend/README.md`).
+- `frontend/` — the web UI: Vue 3 + Vite + TypeScript + Element Plus (pnpm; dev proxy `/api` → backend:8000; see `frontend/README.md` and the frontend design spec in `docs/superpowers/specs/2026-09-03-report-agent-frontend-design.md`). Backend-provided text (interpretation sections, safety scripts, disclaimer) is rendered verbatim.
 - `backend/knowledge_seeds/` — seed YAML for the medical knowledge base (LLM-drafted, human-reviewed before import).
 - `backend/eval/` — eval fixture reports, QA pairs, baseline/result JSONs (regression gate).
 - `backend/scripts/` — operational scripts (seed, smoke, eval); run as `uv run python scripts/<name>.py`.
