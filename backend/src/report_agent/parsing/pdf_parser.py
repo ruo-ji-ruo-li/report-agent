@@ -51,7 +51,7 @@ def _row_to_item(cells: list[str]) -> RawReportItem | None:
         next((c for c in rest if c and re.search(r"^[<≤>~]", c)), None)
     flag = next((c for c in rest if c and c in {"↑", "↓", "H", "L", "高", "低"}), None)
     return RawReportItem(
-        section=None, name=name, value_text=value_text, value_num=value_num, unit=unit,
+        name=name, value_text=value_text, value_num=value_num, unit=unit,
         ref_range_text=ref, abnormal_flag=flag,
     )
 

@@ -36,13 +36,13 @@ async def _mk_report(da: DataAccess) -> str:
 
 
 def _raw(name: str, value_num: float | None) -> RawReportItem:
-    return RawReportItem(section="生化", name=name, value_text=str(value_num),
+    return RawReportItem(name=name, value_text=str(value_num),
                          value_num=value_num, unit="mmol/L", ref_range_text="3.9-6.1",
                          abnormal_flag=None)
 
 
 def _norm(name: str, code: str | None) -> NormalizedItem:
-    return NormalizedItem(raw_index=0, section="生化", name=name, indicator_code=code,
+    return NormalizedItem(raw_index=0, name=name, indicator_code=code,
                           value_text="6.8", value_num=6.8, unit="mmol/L",
                           raw_value_num=6.8, raw_unit="mmol/L", ref_range_text="3.9-6.1",
                           range_from="report")

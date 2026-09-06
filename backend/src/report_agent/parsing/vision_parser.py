@@ -38,9 +38,10 @@ async def parse_images(
         data = await client.complete_json(_page_message(page))
         for it in data.get("items", []):
             items.append(RawReportItem(
-                section=it.get("section"), name=it.get("name", ""), value_text=it.get("value_text"),
+                name=it.get("name", ""), value_text=it.get("value_text"),
                 value_num=it.get("value_num"), unit=it.get("unit"),
                 ref_range_text=it.get("ref_range_text"), abnormal_flag=it.get("abnormal_flag"),
+                code=it.get("code"),
             ))
         m = data.get("meta") or {}
         if meta.institution is None:

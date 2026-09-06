@@ -20,7 +20,7 @@ CHILD = RangeSpec(sex="any", age_min=0, age_max=18, low=3.5, high=5.5,
 
 
 def _item(**kw) -> NormalizedItem:
-    base = {"raw_index": 0, "section": None, "name": "空腹血糖", "indicator_code": "GLU",
+    base = {"raw_index": 0, "name": "空腹血糖", "indicator_code": "GLU",
             "value_text": None, "value_num": 5.0, "unit": "mmol/L", "raw_value_num": 5.0,
             "raw_unit": "mmol/L", "ref_range_text": None, "range_from": None}
     base.update(kw)

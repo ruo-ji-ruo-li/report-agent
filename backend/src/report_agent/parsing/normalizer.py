@@ -93,10 +93,15 @@ class Normalizer:
     ) -> list[NormalizedItem]:
         out: list[NormalizedItem] = []
         unknown_raises: list[int] = []
+        codes = {e.code for e in self._entries}
         for idx, raw in enumerate(raw_items):
-            code = match_indicator(raw.name, self._entries)
+            # spec §10: raw.code 优先 —— 缩写列直接作为 indicator_code;
+            # 不在 KG 目录中 → 回退 name 匹配 → 回退 LLM alias_map
+            code = raw.code if raw.code in codes else None
+            if code is None:
+                code = match_indicator(raw.name, self._entries)
             item = NormalizedItem(
-                raw_index=idx, section=raw.section, name=raw.name, indicator_code=code,
+                raw_index=idx, name=raw.name, indicator_code=code,
                 value_text=raw.value_text, value_num=raw.value_num, unit=raw.unit,
                 raw_value_num=raw.value_num, raw_unit=raw.unit,
                 ref_range_text=raw.ref_range_text,

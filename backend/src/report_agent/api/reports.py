@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api", tags=["reports"])
 
 
 class ManualItem(BaseModel):
-    section: str | None = None
     name: str
     value_text: str | None = None
     value_num: float | None = None
@@ -72,11 +71,12 @@ async def create_report(request: Request,
         meta = manual.meta or {}
         report_id = await db.create_report(
             "manual", None,
-            ReportMeta(source="manual", sex=meta.get("sex"), age=meta.get("age"),
+            ReportMeta(source="manual", name=meta.get("name"),
+                       sex=meta.get("sex"), age=meta.get("age"),
                        institution=meta.get("institution"), report_date=meta.get("report_date")),
         )
         await db.save_raw_items(report_id, [
-            RawReportItem(section=it.section, name=it.name, value_text=it.value_text,
+            RawReportItem(name=it.name, value_text=it.value_text,
                           value_num=it.value_num, unit=it.unit,
                           ref_range_text=it.ref_range_text, abnormal_flag=it.abnormal_flag)
             for it in manual.items

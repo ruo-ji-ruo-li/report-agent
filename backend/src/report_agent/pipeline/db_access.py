@@ -39,7 +39,7 @@ class DataAccess:
     async def save_raw_items(self, report_id: str, items: list[RawReportItem]) -> None:
         async with self._factory() as s:
             s.add_all([
-                RawItem(report_id=report_id, section=it.section, item_name=it.name,
+                RawItem(report_id=report_id, item_name=it.name,
                         value_text=it.value_text, value_num=it.value_num, unit=it.unit,
                         ref_range_text=it.ref_range_text, abnormal_flag=it.abnormal_flag)
                 for it in items
@@ -62,7 +62,7 @@ class DataAccess:
                 select(RawItem).where(RawItem.report_id == report_id).order_by(RawItem.id)
             )).scalars().all()
             return [
-                RawReportItem(section=r.section, name=r.item_name, value_text=r.value_text,
+                RawReportItem(name=r.item_name, value_text=r.value_text,
                               value_num=r.value_num, unit=r.unit,
                               ref_range_text=r.ref_range_text, abnormal_flag=r.abnormal_flag)
                 for r in rows
@@ -72,7 +72,7 @@ class DataAccess:
         async with self._factory() as s:
             s.add_all([
                 NormalizedItemRow(
-                    report_id=report_id, section=it.section, item_name=it.name,
+                    report_id=report_id, item_name=it.name,
                     indicator_code=it.indicator_code, value_text=it.value_text,
                     value_num=it.value_num, unit=it.unit,
                     raw_value_num=it.raw_value_num, raw_unit=it.raw_unit,
@@ -102,7 +102,7 @@ class DataAccess:
             )).scalars().all()
             return [
                 NormalizedItem(
-                    raw_index=i, section=r.section, name=r.item_name, indicator_code=r.indicator_code,
+                    raw_index=i, name=r.item_name, indicator_code=r.indicator_code,
                     value_text=r.value_text, value_num=r.value_num, unit=r.unit,
                     raw_value_num=r.raw_value_num, raw_unit=r.raw_unit,
                     ref_range_text=r.ref_range_text, range_from=r.range_from,

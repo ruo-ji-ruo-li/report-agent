@@ -28,7 +28,7 @@ def test_parse_images_merges_pages(monkeypatch):
 def test_parse_report_pdf_falls_back_to_vision(monkeypatch):
     async def fake_parse_images(pages, client):
         from report_agent.parsing.schemas import RawReportItem, ReportMeta
-        return [RawReportItem(section=None, name="白细胞计数", value_text="6.2", value_num=6.2,
+        return [RawReportItem(name="白细胞计数", value_text="6.2", value_num=6.2,
                               unit="10^9/L", ref_range_text="3.5-9.5", abnormal_flag=None)], \
             ReportMeta(source="photo")
 

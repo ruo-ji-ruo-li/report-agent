@@ -7,12 +7,12 @@ class ReportMeta:
     report_date: str | None = None
     sex: str | None = None  # male / female
     age: float | None = None
+    name: str | None = None  # 表单元数据(spec §11.1)
     source: str = "pdf"  # pdf / photo / manual
 
 
 @dataclass
 class RawReportItem:
-    section: str | None = None
     name: str = ""
     value_text: str | None = None
     value_num: float | None = None
@@ -25,7 +25,6 @@ class RawReportItem:
 @dataclass
 class NormalizedItem:
     raw_index: int
-    section: str | None
     name: str
     indicator_code: str | None  # None = unmapped
     value_text: str | None

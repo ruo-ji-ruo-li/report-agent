@@ -167,7 +167,7 @@ class FakeNormalizer:
 def _raw(name: str, value_num: float | None, unit: str | None = None,
          ref_range: str | None = None) -> RawReportItem:
     return RawReportItem(
-        section="生化", name=name, value_text=str(value_num) if value_num is not None else None,
+        name=name, value_text=str(value_num) if value_num is not None else None,
         value_num=value_num, unit=unit, ref_range_text=ref_range, abnormal_flag=None,
     )
 
@@ -275,7 +275,7 @@ def test_normalize_stage_converts_but_keeps_raw_original_values():
     # 模拟 Normalizer 换算:标准值 6.8 mmol/L → 122.4 mg/dL;raw 原值必须原样保留
     converted = [
         NormalizedItem(
-            raw_index=0, section="生化", name="空腹血糖", indicator_code="GLU",
+            raw_index=0, name="空腹血糖", indicator_code="GLU",
             value_text="6.8", value_num=122.4, unit="mg/dL",
             raw_value_num=6.8, raw_unit="mmol/L", ref_range_text="3.9-6.1",
             range_from="report",
@@ -325,7 +325,7 @@ def test_compare_stage_missing_meta_raises_guidance():
 
 def _glu_item() -> NormalizedItem:
     return NormalizedItem(
-        raw_index=0, section="生化", name="空腹血糖", indicator_code="GLU",
+        raw_index=0, name="空腹血糖", indicator_code="GLU",
         value_text="12.0", value_num=12.0, unit="mmol/L",
         raw_value_num=12.0, raw_unit="mmol/L", ref_range_text="3.9-6.1",
         range_from="report",
@@ -334,7 +334,7 @@ def _glu_item() -> NormalizedItem:
 
 def _unmapped_item() -> NormalizedItem:
     return NormalizedItem(
-        raw_index=1, section="其他", name="未知检验项", indicator_code=None,
+        raw_index=1, name="未知检验项", indicator_code=None,
         value_text="+", value_num=None, unit=None,
         raw_value_num=None, raw_unit=None, ref_range_text=None, range_from=None,
     )
@@ -342,7 +342,7 @@ def _unmapped_item() -> NormalizedItem:
 
 def _alt_item() -> NormalizedItem:
     return NormalizedItem(
-        raw_index=2, section="生化", name="丙氨酸氨基转移酶", indicator_code="ALT",
+        raw_index=2, name="丙氨酸氨基转移酶", indicator_code="ALT",
         value_text="20", value_num=20.0, unit="U/L",
         raw_value_num=20.0, raw_unit="U/L", ref_range_text=None, range_from=None,
     )
@@ -890,7 +890,7 @@ def test_normalize_stage_rerun_keeps_single_batch():
     raws = [_raw("空腹血糖", 6.8, "mmol/L", "3.9-6.1")]
     converted = [
         NormalizedItem(
-            raw_index=0, section="生化", name="空腹血糖", indicator_code="GLU",
+            raw_index=0, name="空腹血糖", indicator_code="GLU",
             value_text="6.8", value_num=122.4, unit="mg/dL",
             raw_value_num=6.8, raw_unit="mmol/L", ref_range_text="3.9-6.1",
             range_from="report",

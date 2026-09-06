@@ -38,8 +38,8 @@ def test_normalize_keeps_raw_value_for_report_range():
     # 数值 110 mg/dL 换算为 6.105 mmol/L,但报告区间 "70-110" 是 mg/dL 单位:
     # 判定必须用 raw_value_num 对报告区间比(见 Task 7),标准值只对 KG 区间比
     n = Normalizer(ENTRIES)
-    raws = [RawReportItem(section="糖代谢", name="空腹血糖", value_text="110", value_num=110.0,
-                          unit="mg/dL", ref_range_text="70-110", abnormal_flag=None)]
+    raws = [RawReportItem(name="空腹血糖", value_text="110", value_num=110.0,
+                          unit="mg/dL", ref_range_text="70-110")]
     out = asyncio.run(n.normalize(raws))
     assert abs(out[0].value_num - 6.105) < 0.01
     assert out[0].unit == "mmol/L"
@@ -50,9 +50,9 @@ def test_normalize_keeps_raw_value_for_report_range():
 def test_normalize_marks_unmapped_and_keeps_flow():
     n = Normalizer(ENTRIES)
     raws = [
-        RawReportItem(section="糖代谢", name="空腹血糖", value_text="6.2", value_num=6.2,
+        RawReportItem(name="空腹血糖", value_text="6.2", value_num=6.2,
                       unit="mmol/L", ref_range_text="3.9-6.1", abnormal_flag="↑"),
-        RawReportItem(section="其他", name="神秘指标X", value_text="1", value_num=1.0,
+        RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
                       unit="u", ref_range_text=None, abnormal_flag=None),
     ]
     out = asyncio.run(n.normalize(raws))  # llm=None:不做 LLM 映射
@@ -68,7 +68,7 @@ def test_normalize_llm_map_fallback_keeps_unknown():
             raise LLMError("down")
 
     n = Normalizer(ENTRIES)
-    raws = [RawReportItem(section=None, name="神秘指标X", value_text="1", value_num=1.0,
+    raws = [RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
                           unit=None, ref_range_text=None, abnormal_flag=None)]
     out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
     assert out[0].indicator_code is None  # LLM 挂 → 规则兜底 unknown
@@ -80,7 +80,23 @@ def test_normalize_llm_non_dict_json_treated_as_failure():
             return []  # 合法 JSON 但非 dict → 视同失败,不得冒泡 AttributeError
 
     n = Normalizer(ENTRIES)
-    raws = [RawReportItem(section=None, name="神秘指标X", value_text="1", value_num=1.0,
+    raws = [RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
                           unit=None, ref_range_text=None, abnormal_flag=None)]
     out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
     assert out[0].indicator_code is None  # 非 dict → unknown 保留继续
+
+
+def test_normalize_prefers_raw_code_and_falls_back():
+    n = Normalizer(ENTRIES)
+    raws = [
+        RawReportItem(name="白细胞计数", value_text="8.0", value_num=8.0, unit="10^9/L",
+                      code="WBC"),  # code 命中 KG → 直接采用
+        RawReportItem(name="空腹血糖", value_text="6.2", value_num=6.2, unit="mmol/L",
+                      code="NOT_IN_KG"),  # code 不在目录 → 回退 name 匹配
+        RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
+                      code="ALSO_UNKNOWN"),  # code 与 name 都不命中 → unmapped
+    ]
+    out = asyncio.run(n.normalize(raws))
+    assert out[0].indicator_code == "WBC"
+    assert out[1].indicator_code == "GLU"  # name 回退命中
+    assert out[2].indicator_code is None
