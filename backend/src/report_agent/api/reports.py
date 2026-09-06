@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 
 from report_agent.observability import get_logger
@@ -41,10 +41,27 @@ async def _save_upload(file: UploadFile, upload_dir: str) -> str:
     return str(path)
 
 
+def _norm_sex(value: str | None) -> str | None:
+    """中文性别归一为 male/female(spec §11.1 防御性归一;前端已映射,双保险)。"""
+    if value == "男":
+        return "male"
+    if value == "女":
+        return "female"
+    return value
+
+
 @router.post("/reports")
 async def create_report(request: Request,
-                        file: UploadFile | None = File(default=None)):  # noqa: B008 —— FastAPI 惯用法,File() 即参数声明
+                        file: UploadFile | None = File(default=None),  # noqa: B008 —— FastAPI 惯用法,File()/Form() 即参数声明;B008 整条签名只报首处
+                        name: str | None = Form(default=None),
+                        sex: str | None = Form(default=None),
+                        age: float | None = Form(default=None),
+                        institution: str | None = Form(default=None),
+                        report_date: str | None = Form(default=None)):
     """multipart `file` 上传 或 JSON 手动录入,二者必居其一。
+
+    表单元数据 name/sex/age/institution/report_date 后端全选填,必填由前端校验
+    (spec §11.1):上传携带 meta 后不再无条件进入 awaiting_meta 暂停。
 
     (brief 偏差,最小修正:fastapi>=0.141 把 File/UploadFile 参数并入 body 字段并
     整体按 form-data 处理 —— 保留 `manual: ManualEntry | None = None` 签名时,
@@ -59,7 +76,9 @@ async def create_report(request: Request,
     if file is not None:
         path = await _save_upload(file, settings.upload_dir)
         source = "pdf" if (file.filename or "").lower().endswith(".pdf") else "photo"
-        report_id = await db.create_report(source, path, ReportMeta(source=source))
+        meta = ReportMeta(source=source, name=name, sex=_norm_sex(sex), age=age,
+                          institution=institution, report_date=report_date)
+        report_id = await db.create_report(source, path, meta)
     else:
         body = await request.body()
         if not body:
@@ -72,7 +91,7 @@ async def create_report(request: Request,
         report_id = await db.create_report(
             "manual", None,
             ReportMeta(source="manual", name=meta.get("name"),
-                       sex=meta.get("sex"), age=meta.get("age"),
+                       sex=_norm_sex(meta.get("sex")), age=meta.get("age"),
                        institution=meta.get("institution"), report_date=meta.get("report_date")),
         )
         await db.save_raw_items(report_id, [

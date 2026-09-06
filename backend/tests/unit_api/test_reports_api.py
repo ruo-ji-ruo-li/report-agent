@@ -39,11 +39,13 @@ class FakeTasks:
 class FakeDB:
     def __init__(self):
         self.report = {"id": "r1", "source": "manual", "file_path": None, "institution": None,
-                       "report_date": None, "sex": None, "age": None}
+                       "report_date": None, "sex": None, "age": None, "name": None}
 
     async def create_report(self, source, file_path, meta):
         self.report.update({"source": source, "file_path": file_path,
-                            "sex": meta.sex, "age": meta.age})
+                            "sex": meta.sex, "age": meta.age,
+                            "name": meta.name, "institution": meta.institution,
+                            "report_date": meta.report_date})
         return "r1"
 
     async def save_raw_items(self, report_id, items):
@@ -117,3 +119,41 @@ def test_get_report_detail_and_task():
     assert r.status_code == 200 and r.json()["status"] == "completed"
     assert client.get("/api/reports/r1/interpretation").json()["summary"] == "总评"
     assert client.get("/api/reports/r1/followup-plan").status_code == 200
+
+
+def test_create_report_upload_with_form_meta(tmp_path):
+    from report_agent.config import Settings
+
+    app = create_app(deps_builder=lambda settings: object())
+    app.state.deps = type("D", (), {"settings": Settings(upload_dir=str(tmp_path))})()
+    app.state.runner = FakeRunner()
+    app.state.tasks = FakeTasks()
+    app.state.db_access = FakeDB()
+    client = TestClient(app)
+    files = {"file": ("a.pdf", b"pdf-bytes", "application/pdf")}
+    data = {"name": "张三", "sex": "男", "age": "45",
+            "institution": "爱康体检", "report_date": "2026-09-01"}
+    resp = client.post("/api/reports", files=files, data=data)
+    assert resp.status_code == 200
+    report = app.state.db_access.report
+    assert report["name"] == "张三"
+    assert report["sex"] == "male"  # 男 → male 归一(spec §11.1)
+    assert report["age"] == 45.0
+    assert report["institution"] == "爱康体检"
+
+
+def test_create_report_upload_sex_english_passthrough(tmp_path):
+    from report_agent.config import Settings
+
+    app = create_app(deps_builder=lambda settings: object())
+    app.state.deps = type("D", (), {"settings": Settings(upload_dir=str(tmp_path))})()
+    app.state.runner = FakeRunner()
+    app.state.tasks = FakeTasks()
+    app.state.db_access = FakeDB()
+    client = TestClient(app)
+    files = {"file": ("a.jpg", b"img", "image/jpeg")}
+    data = {"name": "李四", "sex": "female", "age": "30"}
+    resp = client.post("/api/reports", files=files, data=data)
+    assert resp.status_code == 200
+    assert app.state.db_access.report["sex"] == "female"  # 已是英文原样
+    assert app.state.db_access.report["source"] == "photo"
