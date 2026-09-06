@@ -3,9 +3,23 @@ import type { AxiosInstance } from 'axios'
 import { apiClient } from './client'
 import type { FollowupPlanDoc, InterpretationDoc, ManualEntry, ReportDetail } from './types'
 
-export async function createReportFromFile(file: File, client: AxiosInstance = apiClient) {
+// 上传表单元数据(spec §11.1):sex 取值 male / female(前端下拉 value 即映射,不入中文)
+export interface UploadMeta {
+  name: string
+  sex: string // male / female
+  age: number
+  institution?: string
+  report_date?: string
+}
+
+export async function createReportFromFile(file: File, meta: UploadMeta, client: AxiosInstance = apiClient) {
   const fd = new FormData()
   fd.append('file', file)
+  fd.append('name', meta.name)
+  fd.append('sex', meta.sex)
+  fd.append('age', String(meta.age))
+  if (meta.institution) fd.append('institution', meta.institution)
+  if (meta.report_date) fd.append('report_date', meta.report_date)
   const { data } = await client.post<{ report_id: string; task_id: string }>('/reports', fd)
   return data
 }

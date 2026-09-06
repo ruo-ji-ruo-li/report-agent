@@ -33,7 +33,7 @@ async function save() {
     <div class="patch-title">报告缺少性别或年龄,补充后继续解读</div>
     <div class="patch-row">
       <el-select v-model="sex" placeholder="性别">
-        <el-option label="男" value="男" /><el-option label="女" value="女" />
+        <el-option label="男" value="male" /><el-option label="女" value="female" />
       </el-select>
       <el-input-number v-model="age" :min="0" :max="120" placeholder="年龄" />
       <el-button type="primary" :loading="saving" @click="save">保存并继续解读</el-button>

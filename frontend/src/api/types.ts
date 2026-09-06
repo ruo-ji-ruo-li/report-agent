@@ -5,7 +5,6 @@ export type AdviceLevel = 'lifestyle' | 'recheck' | 'specialist' | 'urgent'
 export type Verdict = 'pass' | 'suspect' | 'block'
 
 export interface ManualItem {
-  section?: string | null
   name: string
   value_text?: string | null
   value_num?: number | null
@@ -21,6 +20,7 @@ export interface ManualEntry {
 export interface ReportMeta {
   id: string
   source: 'pdf' | 'photo' | 'manual'
+  name: string | null
   institution: string | null
   report_date: string | null
   sex: string | null

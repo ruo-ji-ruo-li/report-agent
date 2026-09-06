@@ -27,7 +27,7 @@ describe('视图冒烟(spec-f §9)', () => {
 
   it('ReportView 终态渲染封面带与解读四段', async () => {
     vi.spyOn(reportsApi, 'getReport').mockResolvedValue({
-      meta: { id: 'r1', source: 'pdf', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+      meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
       items: [],
       normalized: [{ item_name: '总胆固醇', indicator_code: 'TC', value_num: 6.31, unit: 'mmol/L', status: 'high', ref_low: 2.8, ref_high: 5.2, critical: false, section: null }],
       task: { id: 't1', status: 'completed', stage: null, error: null },
@@ -52,7 +52,7 @@ describe('视图冒烟(spec-f §9)', () => {
 
   it('ReportView awaiting_meta 显示补录表单', async () => {
     vi.spyOn(reportsApi, 'getReport').mockResolvedValue({
-      meta: { id: 'r1', source: 'pdf', institution: null, report_date: null, sex: null, age: null },
+      meta: { id: 'r1', source: 'pdf', name: '张三', institution: null, report_date: null, sex: null, age: null },
       items: [], normalized: [],
       task: { id: 't1', status: 'awaiting_meta', stage: 'normalize', error: null },
     })
@@ -76,12 +76,12 @@ describe('视图冒烟(spec-f §9)', () => {
     vi.useFakeTimers()
     try {
       const running: ReportDetail = {
-        meta: { id: 'r1', source: 'pdf', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
         items: [], normalized: [],
         task: { id: 't1', status: 'running', stage: 'generate', error: null },
       }
       const completed: ReportDetail = {
-        meta: { id: 'r1', source: 'pdf', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
         items: [], normalized: [],
         task: { id: 't1', status: 'completed', stage: null, error: null },
       }
