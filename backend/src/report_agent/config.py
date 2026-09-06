@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     unstructured_ocr_languages: list[str] = ["chi_sim", "eng"]
     parse_min_items: int = 3
 
+    # Paddle OCR(spec §4.3)
+    paddle_api_url: str = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+    paddle_token: str = ""  # API key,真实值放本地 .env,不提交
+    paddle_model: str = "PaddleOCR-VL-1.6"
+    paddle_poll_interval: float = 2.0  # 轮询间隔(秒;原示例 5s 过长)
+    paddle_poll_timeout: float = 600.0  # job 总超时(秒)
+
     # 上传
     upload_dir: str = "./uploads"
 
