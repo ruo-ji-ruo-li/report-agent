@@ -64,11 +64,15 @@ async def main() -> None:
         assert any(ln.startswith("event: token") for ln in raw_lines)
         print(f"[5] 追问流式完成: {len(events)} 个 SSE 事件")
 
-        # 5) 知识库外拒答
+        # 5) 知识库外拒答(与步骤 4 同款过滤:仅拼 data: 的 token 流,事件类型行不入文)
         async with client.stream("POST", f"{BASE}/api/chat/sessions/{sid}/messages",
                                  json={"content": "请介绍一下量子场论的最新进展"}) as resp:
-            text = "".join([line async for line in resp.aiter_lines()])
-        assert ("拒" in text and "医生" in text) or "未覆盖" in text, text[:200]
+            text = "".join([line[6:] async for line in resp.aiter_lines()
+                            if line.startswith("data: ")])
+        # 拒答语义断言取措辞变体合集(实测模型答"超出了体检报告问答范围,建议咨询相关专业人员"):
+        # 旧断言只认 "拒…医生" / "未覆盖",deepseek 措辞一换即误报
+        assert any(k in text for k in ("超出", "未覆盖", "无法回答", "不在我",
+                                       "建议咨询", "咨询医生", "不属于")), text[:200]
         print("[6] 知识库外问题已拒答")
 
     print("\nSMOKE PASS")
