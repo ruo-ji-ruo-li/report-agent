@@ -27,6 +27,13 @@ const docError = ref<string | null>(null)
 const detailError = ref(false) // 详情加载失败(404/网络)→ 渲染错误块而非白屏(fix round 2)
 const activeTab = ref('interp')
 
+// 性别展示映射:后端各入口(上传/补录/手录)统一存 male/female(spec §11.1),封面渲染中文
+const SEX_TEXT: Record<string, string> = { male: '男', female: '女' }
+const sexText = computed(() => {
+  const sex = detail.value?.meta.sex
+  return sex ? (SEX_TEXT[sex] ?? '—') : '—'
+})
+
 const terminal = computed(() =>
   detail.value?.task && ['completed', 'degraded', 'failed'].includes(detail.value.task.status),
 )
@@ -119,7 +126,7 @@ onBeforeUnmount(() => poller.stop())
     <header class="cover">
       <h1 class="cover-title">体检报告</h1>
       <div class="cover-meta">
-        {{ detail.meta.sex ?? '—' }} · {{ detail.meta.age ?? '—' }} 岁
+        {{ sexText }} · {{ detail.meta.age ?? '—' }} 岁
         · {{ detail.meta.institution || '未知机构' }} · {{ detail.meta.report_date || '未知日期' }}
       </div>
       <div class="cover-badges">

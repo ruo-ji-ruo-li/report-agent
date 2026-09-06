@@ -27,7 +27,7 @@ describe('视图冒烟(spec-f §9)', () => {
 
   it('ReportView 终态渲染封面带与解读四段', async () => {
     vi.spyOn(reportsApi, 'getReport').mockResolvedValue({
-      meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+      meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: 'male', age: 35 },
       items: [],
       normalized: [{ item_name: '总胆固醇', indicator_code: 'TC', value_num: 6.31, unit: 'mmol/L', status: 'high', ref_low: 2.8, ref_high: 5.2, critical: false, section: null }],
       task: { id: 't1', status: 'completed', stage: null, error: null },
@@ -46,6 +46,7 @@ describe('视图冒烟(spec-f §9)', () => {
     const w = mount(ReportView, globalOpts)
     await flushPromises()
     expect(w.text()).toContain('平安健康体检中心')
+    expect(w.text()).toContain('男 · 35 岁') // 后端 male/female → 封面中文(spec §11.1)
     expect(w.text()).toContain('总体结论')
     expect(w.text()).toContain('高于参考区间')
   })
@@ -76,12 +77,12 @@ describe('视图冒烟(spec-f §9)', () => {
     vi.useFakeTimers()
     try {
       const running: ReportDetail = {
-        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: 'male', age: 35 },
         items: [], normalized: [],
         task: { id: 't1', status: 'running', stage: 'generate', error: null },
       }
       const completed: ReportDetail = {
-        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: '男', age: 35 },
+        meta: { id: 'r1', source: 'pdf', name: '张三', institution: '平安健康体检中心', report_date: '2026-08-28', sex: 'male', age: 35 },
         items: [], normalized: [],
         task: { id: 't1', status: 'completed', stage: null, error: null },
       }
