@@ -56,14 +56,17 @@ async def parse_stage(ctx: StageContext) -> dict:
     )
     if out is None:
         raise ValueError("解析失败:不支持的来源")
-    await ctx.db.update_report_meta(ctx.report["id"], out.meta)
     # F3: 先删后写 —— 崩溃窗口(DB 写后、checkpoint 前)恢复重跑不累积重复行
     await ctx.db.delete_raw_items(ctx.report["id"])
     await ctx.db.save_raw_items(ctx.report["id"], out.items)
-    needs_meta = out.meta.sex is None or out.meta.age is None
+    # 无法解析表格落库(spec §7.1):同样先删后写
+    await ctx.db.delete_unparsed_tables(ctx.report["id"])
+    await ctx.db.save_unparsed_tables(ctx.report["id"], ctx.task_id, out.failed_htmls)
+    # 元数据来自前端表单(spec §11):缺 sex/age 暂停 awaiting_meta(F2)
+    needs_meta = ctx.report.get("sex") is None or ctx.report.get("age") is None
     if needs_meta:
         log.warning("report_meta_missing", task_id=ctx.task_id,
-                    sex=out.meta.sex, age=out.meta.age)
+                    sex=ctx.report.get("sex"), age=ctx.report.get("age"))
     return {"method": out.method, "n_items": len(out.items), "needs_meta": needs_meta}
 
 

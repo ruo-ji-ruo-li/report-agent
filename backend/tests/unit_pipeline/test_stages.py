@@ -32,7 +32,7 @@ from report_agent.knowledge.kg_client import (
 )
 from report_agent.llm.client import LLMError
 from report_agent.parsing.parse_report import ParseOutput
-from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
+from report_agent.parsing.schemas import NormalizedItem, RawReportItem
 from report_agent.pipeline import stages as stages_mod
 from report_agent.pipeline.stages import (
     StageContext,
@@ -68,6 +68,9 @@ class FakeDB:
         self.norm_store: list = []
         self.interp_store: list = []
         self.followup_store: list = []
+        self.saved_unparsed = None
+        self.delete_unparsed_calls: list[str] = []
+        self.unparsed_store: list = []
 
     async def get_raw_items(self, report_id):
         return self.raw_items
@@ -77,6 +80,14 @@ class FakeDB:
 
     async def update_report_meta(self, report_id, meta):
         self.updated_meta = meta
+
+    async def save_unparsed_tables(self, report_id, task_id, htmls):
+        self.saved_unparsed = htmls
+        self.unparsed_store.extend(htmls)
+
+    async def delete_unparsed_tables(self, report_id):
+        self.delete_unparsed_calls.append(report_id)
+        self.unparsed_store.clear()
 
     async def save_raw_items(self, report_id, items):
         self.saved_raw = items
@@ -214,13 +225,12 @@ def test_parse_stage_manual_without_items_raises():
         asyncio.run(parse_stage(ctx))
 
 
-def test_parse_stage_pdf_persists_meta_raw_and_signals_meta_missing(monkeypatch):
+def test_parse_stage_pdf_persists_raw_and_unparsed_and_signals_meta_missing(monkeypatch):
+    """元数据来自前端表单(spec §11):解析产物只落 raw items + 无法解析表格;
+    report 缺 sex/age → needs_meta=True 暂停 awaiting_meta(F2)。"""
     items = [_raw("GLU", 6.8, "mmol/L", "3.9-6.1")]
-    out = ParseOutput(
-        items=items, meta=ReportMeta(institution="体检中心", report_date="2026-01-01",
-                                     sex=None, age=None),
-        method="unstructured",
-    )
+    out = ParseOutput(items=items, method="paddle",
+                      failed_htmls=["<table><tr><td>甲</td><td>乙</td></tr></table>"])
 
     async def fake_parse(file_path, source, settings, llms):
         assert file_path == "/tmp/r.pdf"
@@ -230,18 +240,16 @@ def test_parse_stage_pdf_persists_meta_raw_and_signals_meta_missing(monkeypatch)
     monkeypatch.setattr(stages_mod, "parse_report", fake_parse)
     db = FakeDB()
     deps = SimpleNamespace(settings=object(), llms=object())
-    report = {"id": "r1", "source": "pdf", "file_path": "/tmp/r.pdf"}
+    report = {"id": "r1", "source": "pdf", "file_path": "/tmp/r.pdf"}  # 表单未补 sex/age
     ctx = StageContext(task_id="t1", report=report, db=db, deps=deps)
     payload = asyncio.run(parse_stage(ctx))
-    assert payload == {"method": "unstructured", "n_items": 1, "needs_meta": True}
-    assert db.updated_meta is out.meta
+    assert payload == {"method": "paddle", "n_items": 1, "needs_meta": True}
     assert db.saved_raw == items
+    assert db.saved_unparsed == out.failed_htmls
 
 
 def test_parse_stage_full_meta_does_not_pause(monkeypatch):
-    out = ParseOutput(
-        items=[_raw("GLU", 6.8)], meta=ReportMeta(sex="male", age=40.0), method="vision",
-    )
+    out = ParseOutput(items=[_raw("GLU", 6.8)], method="vision", failed_htmls=[])
 
     async def fake_parse(file_path, source, settings, llms):
         return out
@@ -249,7 +257,8 @@ def test_parse_stage_full_meta_does_not_pause(monkeypatch):
     monkeypatch.setattr(stages_mod, "parse_report", fake_parse)
     db = FakeDB()
     deps = SimpleNamespace(settings=object(), llms=object())
-    report = {"id": "r1", "source": "photo", "file_path": "/tmp/r.png"}
+    report = {"id": "r1", "source": "photo", "file_path": "/tmp/r.png",
+              "sex": "male", "age": 40.0}
     ctx = StageContext(task_id="t1", report=report, db=db, deps=deps)
     payload = asyncio.run(parse_stage(ctx))
     assert payload == {"method": "vision", "n_items": 1, "needs_meta": False}
@@ -866,9 +875,10 @@ def test_retrieve_stage_placeholder_emits_retrieval_fallback_audit():
 
 
 def test_parse_stage_rerun_replaces_raw_rows_single_batch(monkeypatch):
-    """F3:parse 重跑先删该 report 旧 raw 行再写 —— 崩溃窗口恢复不累积重复行。"""
+    """F3:parse 重跑先删该 report 旧 raw 行/unparsed 行再写 —— 崩溃窗口恢复不累积重复行。"""
     items = [_raw("GLU", 6.8, "mmol/L", "3.9-6.1")]
-    out = ParseOutput(items=items, meta=ReportMeta(sex="male", age=40.0), method="unstructured")
+    out = ParseOutput(items=items, method="paddle",
+                      failed_htmls=["<table><tr><td>甲</td><td>乙</td></tr></table>"])
 
     async def fake_parse(file_path, source, settings, llms):
         return out
@@ -881,8 +891,11 @@ def test_parse_stage_rerun_replaces_raw_rows_single_batch(monkeypatch):
     asyncio.run(parse_stage(ctx))
     asyncio.run(parse_stage(ctx))
     assert db.delete_raw_calls == ["r1", "r1"]  # 每次写前先删
+    assert db.delete_unparsed_calls == ["r1", "r1"]
     assert len(db.raw_store) == 1  # 单批行,不翻倍
     assert db.raw_store == items
+    assert len(db.unparsed_store) == 1
+    assert db.unparsed_store == out.failed_htmls
 
 
 def test_normalize_stage_rerun_keeps_single_batch():
