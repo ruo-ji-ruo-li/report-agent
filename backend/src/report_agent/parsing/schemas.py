@@ -12,13 +12,14 @@ class ReportMeta:
 
 @dataclass
 class RawReportItem:
-    section: str | None
-    name: str
-    value_text: str | None
-    value_num: float | None
-    unit: str | None
-    ref_range_text: str | None
-    abnormal_flag: str | None
+    section: str | None = None
+    name: str = ""
+    value_text: str | None = None
+    value_num: float | None = None
+    unit: str | None = None
+    ref_range_text: str | None = None
+    abnormal_flag: str | None = None
+    code: str | None = None  # 缩写列(表头 2.3),归一化优先使用(spec §10)
 
 
 @dataclass
