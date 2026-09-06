@@ -23,7 +23,12 @@ async def main() -> None:
 
         gen_pdf()
         with open("eval/fixtures/sample_report.pdf", "rb") as f:  # noqa: ASYNC230 —— 本地小文件上传,阻塞可接受(对齐 api/reports.py)
-            resp = await client.post(f"{BASE}/api/reports", files={"file": ("sample.pdf", f, "application/pdf")})
+            # 解析层升级后上传即带表单元数据(与 gen_sample_pdf 样例一致:张三/男/45 岁):
+            # 不带 sex/age → reports 列为 NULL → parse 阶段 needs_meta → 任务停在 awaiting_meta,
+            # 下方轮询永不达终态,故随上传一并提交(spec §11.1)
+            resp = await client.post(f"{BASE}/api/reports",
+                                     data={"name": "张三", "sex": "male", "age": "45"},
+                                     files={"file": ("sample.pdf", f, "application/pdf")})
         assert resp.status_code == 200, resp.text
         report_id, task_id = resp.json()["report_id"], resp.json()["task_id"]
         print(f"[1] 已创建报告 {report_id},任务 {task_id}")
