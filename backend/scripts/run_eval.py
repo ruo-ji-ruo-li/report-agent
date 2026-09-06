@@ -51,7 +51,9 @@ async def main() -> None:
         sys.exit(2)
     for path in report_files:
         data = json.loads(path.read_text("utf-8"))
-        raws = [RawReportItem(**r) for r in data["raw_items"]]
+        # fixture raw_items 仍带 "section" 键(section 已从 schema 删除,消费方剥离)
+        raws = [RawReportItem(**{k: v for k, v in r.items() if k != "section"})
+                for r in data["raw_items"]]
         # 1) 解析准确率:归一化 F1(全量)
         items = await deps.normalizer.normalize(raws, llm=deps.llms.chat)
         pred = [it.indicator_code for it in items]
@@ -62,7 +64,7 @@ async def main() -> None:
         for i, r in enumerate(data["raw_items"]):
             code = data["gt_codes"].get(r["name"])
             gt_items.append(NormalizedItem(
-                raw_index=i, section=r.get("section"), name=r["name"], indicator_code=code,
+                raw_index=i, name=r["name"], indicator_code=code,
                 value_text=r.get("value_text"), value_num=r.get("value_num"),
                 unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
                 ref_range_text=r.get("ref_range_text"), range_from="report",
@@ -127,7 +129,7 @@ async def main() -> None:
         # 复用第 2 步的 gt 归一化口径生成判定
         gt_items = [
             NormalizedItem(
-                raw_index=i, section=r.get("section"), name=r["name"],
+                raw_index=i, name=r["name"],
                 indicator_code=data["gt_codes"].get(r["name"]),
                 value_text=r.get("value_text"), value_num=r.get("value_num"),
                 unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
@@ -194,13 +196,14 @@ async def main() -> None:
         qa_report_id = None
         try:
             qa_report_id = await deps.db.create_report("manual", None, fixture_meta)
-            raws3 = [RawReportItem(**r) for r in fixture["raw_items"][:3]]
+            raws3 = [RawReportItem(**{k: v for k, v in r.items() if k != "section"})
+                     for r in fixture["raw_items"][:3]]
             await deps.db.save_raw_items(qa_report_id, raws3)
             gt3 = []
             for i, r in enumerate(fixture["raw_items"][:3]):
                 code = fixture["gt_codes"].get(r["name"])
                 gt3.append(NormalizedItem(
-                    raw_index=i, section=r.get("section"), name=r["name"], indicator_code=code,
+                    raw_index=i, name=r["name"], indicator_code=code,
                     value_text=r.get("value_text"), value_num=r.get("value_num"),
                     unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
                     ref_range_text=r.get("ref_range_text"), range_from="report",
