@@ -221,6 +221,10 @@ def try_align_with_prev(block: TableBlock, prev_roles: dict[str, int], prev_cols
                 return None
             roles[right_roles[r_idx]] = col
             r_idx += 1
+        if "name" not in roles:
+            # 对齐结果缺 name(异常布局/首行探针形态不符,右侧扫描跳过 name 列)→ 视为无法对齐:
+            # 否则 parse_rows 无 name 可用、整表行静默丢弃,还会污染后续 prev 对齐状态
+            return None
         return roles
     # 2b: 无代码列 → 列数一致 + 首行模式一致
     if (prev_first_row is not None and n_cols == len(prev_first_row)
@@ -276,6 +280,12 @@ def parse_merged_tables(merged: str) -> tuple[list[RawReportItem], list[str]]:
                 failed.append(block.raw_html)  # 无法判断 → 不做处理,落库
                 continue
             roles = aligned
+        if "value" not in roles:
+            # 角色缺 value(变体表头如"检查结果"只命中 name/unit、或对齐丢值列)→ 无法解析任何
+            # 数值/所见:整表进 failed_htmls 落库供人工查证,不产出丢值 item,也不更新 prev 状态
+            # (spec §6.2:表头可识别但列角色未知 → unparsed_tables)
+            failed.append(block.raw_html)
+            continue
         items.extend(parse_rows(block.rows, roles, table_type(roles)))
         # 只有解析成功的表才能作为后续截断表的表头来源
         prev_roles = roles

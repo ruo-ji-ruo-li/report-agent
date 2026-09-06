@@ -71,3 +71,23 @@ def test_unparseable_table_collected_as_failed_html():
     items, failed = parse_merged_tables(bad)
     assert items == [] and len(failed) == 1
     assert "<table>" in failed[0]
+
+
+def test_align_result_without_name_goes_to_failed():
+    # 2a 代码列对齐:name 位于 code 右侧,首行探针该列呈数值形态 → 右侧角色扫描跳过 name,
+    # 对齐结果缺 name → 必须视为无法对齐整表落库(否则 parse_rows 整表静默丢行、污染 prev)
+    prev = """<table border=1><tr><td>缩写</td><td>检查项目</td><td>测量结果</td><td>单位</td></tr><tr><td>WBC</td><td>白细胞计数</td><td>8.0</td><td>$ 10^{{9}}/L $</td></tr></table>"""
+    cont = """<table border=1><tr><td>GLU</td><td>7.8</td><td>mmol/L</td></tr><tr><td>TG</td><td>1.7</td><td>mmol/L</td></tr></table>"""
+    merged = merge_page_markdown([prev, cont])
+    items, failed = parse_merged_tables(merged)
+    assert [i.name for i in items] == ["白细胞计数"]  # 首页正常表照常解析
+    assert len(failed) == 1 and "GLU" in failed[0]  # 截断表缺 name → 落库不产出丢行 item
+
+
+def test_header_without_value_role_goes_to_failed():
+    # 变体表头"检查结果"非值列关键词整词("结果"≠"检查结果")→ 角色只命中 name/unit、缺 value,
+    # 按 spec §6.2 应进 unparsed_tables,不得按 C 型残表解析产出丢值 item、也不更新 prev
+    variant = """<table border=1><tr><td>检查项目</td><td>检查结果</td><td>单位</td></tr><tr><td>空腹血糖</td><td>5.6</td><td>mmol/L</td></tr></table>"""
+    items, failed = parse_merged_tables(variant)
+    assert items == []
+    assert len(failed) == 1 and "空腹血糖" in failed[0]

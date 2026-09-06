@@ -92,6 +92,11 @@ class PaddleClient:
             except (KeyError, ValueError, TypeError) as e:
                 # TypeError: resp.json() 返回 None/数组时按异常响应收敛
                 raise PaddleError(f"Paddle 轮询响应异常: {resp.text[:200]}") from e
+            if not isinstance(data, dict):
+                # data 为 null/数组/字符串等非对象形态:同样收敛为 PaddleError(spec §11
+                # 降级契约——Paddle 异常必须被 parse_report 的 except PaddleError 捕获以触发
+                # 视觉兜底),否则下方 data.get 裸抛 AttributeError 逃逸出捕获范围
+                raise PaddleError(f"Paddle 轮询响应 data 非对象: {resp.text[:200]}")
             state = data.get("state")  # 缺 state 视为未到终态,交由超时收敛为 PaddleError
             if state == "done":
                 try:
