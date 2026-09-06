@@ -143,3 +143,38 @@ async def test_plan_delete_scoped_to_task_keeps_other_task_rows(store):
                         models.FollowupPlanRow.task_id == t1.id) == 0
     assert await _count(factory, models.FollowupPlanRow,
                         models.FollowupPlanRow.task_id == t2.id) == 1
+
+
+async def test_unparsed_tables_delete_then_insert_and_section_map(store):
+    da, factory = store
+    rid = await _mk_report(da)
+    htmls = ["<table><tr><td>x</td></tr></table>", "<table><tr><td>y</td></tr></table>"]
+
+    await da.save_unparsed_tables(rid, "task-1", htmls)
+    assert await _count(factory, models.UnparsedTable,
+                        models.UnparsedTable.report_id == rid) == 2
+
+    # F3: 先删后写 —— 重跑只留第二批,不累积
+    await da.delete_unparsed_tables(rid)
+    await da.save_unparsed_tables(rid, "task-1", htmls[:1])
+    assert await _count(factory, models.UnparsedTable,
+                        models.UnparsedTable.report_id == rid) == 1
+
+    # section 映射:空表 → {};手工插入后命中(spec §9.2)
+    assert await da.get_section_map() == {}
+    async with factory() as s:
+        s.add(models.ItemSectionMapping(item_name="白细胞计数", section="血常规"))
+        await s.commit()
+    assert await da.get_section_map() == {"白细胞计数": "血常规"}
+
+
+async def test_get_report_detail_section_from_mapping(store):
+    da, factory = store
+    rid = await _mk_report(da)
+    await da.save_raw_items(rid, [_raw("空腹血糖", 6.8)])
+    async with factory() as s:
+        s.add(models.ItemSectionMapping(item_name="空腹血糖", section="糖代谢"))
+        await s.commit()
+    detail = await da.get_report_detail(rid)
+    assert detail["items"][0]["name"] == "空腹血糖"
+    assert detail["items"][0]["section"] == "糖代谢"  # 查映射表

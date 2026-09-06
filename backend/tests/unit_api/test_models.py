@@ -4,16 +4,27 @@ from report_agent.db import models
 
 def test_all_tables_defined():
     assert {t.name for t in models.Base.metadata.sorted_tables} == {
-        "reports",
-        "report_items_raw",
-        "report_items_normalized",
-        "interpretation_tasks",
-        "interpretations",
-        "followup_plans",
-        "chat_sessions",
-        "chat_messages",
-        "audit_events",
+        "reports", "report_items_raw", "report_items_normalized",
+        "interpretation_tasks", "interpretations", "followup_plans",
+        "chat_sessions", "chat_messages", "audit_events",
+        "unparsed_tables", "item_section_mapping",
     }
+
+
+def test_all_tables_have_timestamps():
+    for table in models.Base.metadata.sorted_tables:
+        cols = {c.name for c in table.columns}
+        assert {"created_at", "updated_at"} <= cols, f"{table.name} 缺时间戳列"
+
+
+def test_report_has_name_column():
+    cols = {c.name for c in models.Report.__table__.columns}
+    assert "name" in cols
+
+
+def test_raw_item_has_code_and_no_section():
+    cols = {c.name for c in models.RawItem.__table__.columns}
+    assert "code" in cols and "section" not in cols
 
 
 def test_report_has_meta_columns():

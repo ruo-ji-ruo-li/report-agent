@@ -22,7 +22,7 @@ class DataAccess:
             return {
                 "id": row.id, "source": row.source, "file_path": row.file_path,
                 "institution": row.institution, "report_date": row.report_date,
-                "sex": row.sex, "age": row.age,
+                "sex": row.sex, "age": row.age, "name": row.name,
             }
 
     async def update_report_meta(self, report_id: str, meta: ReportMeta) -> None:
@@ -41,7 +41,8 @@ class DataAccess:
             s.add_all([
                 RawItem(report_id=report_id, item_name=it.name,
                         value_text=it.value_text, value_num=it.value_num, unit=it.unit,
-                        ref_range_text=it.ref_range_text, abnormal_flag=it.abnormal_flag)
+                        ref_range_text=it.ref_range_text, abnormal_flag=it.abnormal_flag,
+                        code=it.code)
                 for it in items
             ])
             await s.commit()
@@ -64,7 +65,8 @@ class DataAccess:
             return [
                 RawReportItem(name=r.item_name, value_text=r.value_text,
                               value_num=r.value_num, unit=r.unit,
-                              ref_range_text=r.ref_range_text, abnormal_flag=r.abnormal_flag)
+                              ref_range_text=r.ref_range_text, abnormal_flag=r.abnormal_flag,
+                              code=r.code)
                 for r in rows
             ]
 
@@ -165,13 +167,15 @@ class DataAccess:
 
         async with self._factory() as s:
             row = Report(source=source, file_path=file_path, institution=meta.institution,
-                         report_date=meta.report_date, sex=meta.sex, age=meta.age)
+                         report_date=meta.report_date, sex=meta.sex, age=meta.age,
+                         name=meta.name)
             s.add(row)
             await s.commit()
             await s.refresh(row)
             return row.id
 
     async def get_report_detail(self, report_id: str) -> dict | None:
+        section_map = await self.get_section_map()
         from sqlalchemy import select
 
         async with self._factory() as s:
@@ -187,9 +191,11 @@ class DataAccess:
             )).scalars().all()
             return {
                 "meta": {"id": row.id, "source": row.source, "institution": row.institution,
-                         "report_date": row.report_date, "sex": row.sex, "age": row.age},
+                         "report_date": row.report_date, "sex": row.sex, "age": row.age,
+                         "name": row.name},
                 "items": [
-                    {"section": r.section, "name": r.item_name, "value_text": r.value_text,
+                    {"section": section_map.get(r.item_name), "name": r.item_name,
+                     "value_text": r.value_text,
                      "value_num": r.value_num, "unit": r.unit, "ref_range_text": r.ref_range_text,
                      "abnormal_flag": r.abnormal_flag}
                     for r in raws
@@ -198,7 +204,7 @@ class DataAccess:
                     {"item_name": n.item_name, "indicator_code": n.indicator_code,
                      "value_num": n.value_num, "unit": n.unit, "status": n.status,
                      "ref_low": n.ref_low, "ref_high": n.ref_high, "critical": n.critical,
-                     "section": n.section}
+                     "section": section_map.get(n.item_name)}
                     for n in norms
                 ],
             }
@@ -247,6 +253,37 @@ class DataAccess:
             if row is None:
                 return None
             return {"items": row.items, "degraded": row.degraded}
+
+    # ===== 无法解析表格(spec §7.1,仅 Paddle 主路径写入)=====
+    async def save_unparsed_tables(self, report_id: str, task_id: str, htmls: list[str]) -> None:
+        from report_agent.db.models import UnparsedTable
+
+        if not htmls:
+            return
+        async with self._factory() as s:
+            s.add_all([UnparsedTable(report_id=report_id, task_id=task_id, table_html=h)
+                       for h in htmls])
+            await s.commit()
+
+    async def delete_unparsed_tables(self, report_id: str) -> None:
+        """F3: 报告级删旧行(parse 阶段重跑幂等)。"""
+        from sqlalchemy import delete
+
+        from report_agent.db.models import UnparsedTable
+
+        async with self._factory() as s:
+            await s.execute(delete(UnparsedTable).where(UnparsedTable.report_id == report_id))
+            await s.commit()
+
+    # ===== section 映射(spec §9.2,数据由用户手动 SQL 维护)=====
+    async def get_section_map(self) -> dict[str, str]:
+        from sqlalchemy import select
+
+        from report_agent.db.models import ItemSectionMapping
+
+        async with self._factory() as s:
+            rows = (await s.execute(select(ItemSectionMapping))).scalars().all()
+            return {r.item_name: r.section for r in rows}
 
     # ===== 追问会话 =====
     async def create_session(self, report_id: str) -> str:

@@ -1,4 +1,6 @@
-"""9 张表,全部 String 列存枚举值(见 spec §4.1)。JSON 列用 sqlalchemy JSON 类型。"""
+"""11 张表,全部 String 列存枚举值(见 spec §4.1)。JSON 列用 sqlalchemy JSON 类型。
+全表 created_at/updated_at 时间戳(spec §9.1);不可变行(chat_messages/audit_events)
+的 updated_at 与可变行一致,避免审计与读取路径分叉。"""
 import uuid
 from datetime import datetime
 
@@ -25,7 +27,11 @@ class Report(Base):
     sex: Mapped[str | None] = mapped_column(String(8))  # male / female
     age: Mapped[float | None] = mapped_column(Float)
     user_id: Mapped[str | None] = mapped_column(String(36))
+    name: Mapped[str | None] = mapped_column(String(128))  # 手动录入时提供的报告名(表单元数据,spec §11.1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     items_raw: Mapped[list["RawItem"]] = relationship(
         back_populates="report", cascade="all, delete-orphan"
@@ -40,13 +46,17 @@ class RawItem(Base):
 
     id = _pk()
     report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
-    section: Mapped[str | None] = mapped_column(String(64))
+    code: Mapped[str | None] = mapped_column(String(32))  # 缩写列(如 WBC/GLU),spec §10
     item_name: Mapped[str] = mapped_column(String(128))
     value_text: Mapped[str | None] = mapped_column(String(64))
     value_num: Mapped[float | None] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32))
     ref_range_text: Mapped[str | None] = mapped_column(String(128))
     abnormal_flag: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     report: Mapped["Report"] = relationship(back_populates="items_raw")
 
@@ -57,7 +67,6 @@ class NormalizedItemRow(Base):
     id = _pk()
     report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
     raw_item_id: Mapped[str | None] = mapped_column(ForeignKey("report_items_raw.id"))
-    section: Mapped[str | None] = mapped_column(String(64))
     item_name: Mapped[str] = mapped_column(String(128))
     indicator_code: Mapped[str | None] = mapped_column(String(32), index=True)  # None = unmapped
     value_text: Mapped[str | None] = mapped_column(String(64))
@@ -71,6 +80,10 @@ class NormalizedItemRow(Base):
     ref_low: Mapped[float | None] = mapped_column(Float)
     ref_high: Mapped[float | None] = mapped_column(Float)
     critical: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     report: Mapped["Report"] = relationship(back_populates="items_normalized")
 
@@ -107,6 +120,9 @@ class InterpretationRow(Base):
     disclaimer: Mapped[str] = mapped_column(Text)
     degraded: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class FollowupPlanRow(Base):
@@ -120,6 +136,9 @@ class FollowupPlanRow(Base):
     items: Mapped[list] = mapped_column(JSON)
     degraded: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class ChatSession(Base):
@@ -129,6 +148,9 @@ class ChatSession(Base):
     report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class ChatMessage(Base):
@@ -144,6 +166,9 @@ class ChatMessage(Base):
     evidence_ids: Mapped[list | None] = mapped_column(JSON)
     guardrail_flags: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AuditEvent(Base):
@@ -156,3 +181,33 @@ class AuditEvent(Base):
     task_id: Mapped[str | None] = mapped_column(String(36), index=True)
     session_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UnparsedTable(Base):
+    """无法解析的表格(spec §7.1):仅 Paddle 主路径写入,视觉路径无 HTML 来源。"""
+    __tablename__ = "unparsed_tables"
+
+    id = _pk()
+    report_id: Mapped[str] = mapped_column(ForeignKey("reports.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True)  # 不设 FK(参照 audit_events 模式)
+    table_html: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ItemSectionMapping(Base):
+    """检验项目 → 分组映射表(spec §9.2):数据由用户手动 SQL 维护,查无 → null。"""
+    __tablename__ = "item_section_mapping"
+
+    id = _pk()
+    item_name: Mapped[str] = mapped_column(String(128), unique=True)
+    section: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
