@@ -66,13 +66,15 @@ class PaddleClient:
             with path.open("rb") as f:
                 resp = httpx.post(self._url, headers=self._headers, data=data,
                                   files={"file": f}, timeout=60.0)
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, OSError) as e:
+            # OSError: 文件打开/读取失败(占用、权限、存在性竞态)同样收敛为 PaddleError
             raise PaddleError(f"Paddle 提交失败: {e}") from e
         if resp.status_code != 200:
             raise PaddleError(f"Paddle 提交失败(status={resp.status_code}): {resp.text[:200]}")
         try:
             return resp.json()["data"]["jobId"]
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError, TypeError) as e:
+            # TypeError: resp.json() 返回 None 时 None["data"] 抛出,一并收敛
             raise PaddleError(f"Paddle 提交响应无 jobId: {resp.text[:200]}") from e
 
     def _poll(self, job_id: str) -> str:
@@ -87,11 +89,16 @@ class PaddleClient:
                 raise PaddleError(f"Paddle 轮询失败(status={resp.status_code})")
             try:
                 data = resp.json()["data"]
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
+                # TypeError: resp.json() 返回 None/数组时按异常响应收敛
                 raise PaddleError(f"Paddle 轮询响应异常: {resp.text[:200]}") from e
-            state = data["state"]
+            state = data.get("state")  # 缺 state 视为未到终态,交由超时收敛为 PaddleError
             if state == "done":
-                return data["resultUrl"]["jsonUrl"]
+                try:
+                    json_url = data["resultUrl"]["jsonUrl"]
+                except (KeyError, TypeError) as e:
+                    raise PaddleError(f"Paddle 轮询响应缺 jsonUrl: {resp.text[:200]}") from e
+                return json_url
             if state == "failed":
                 raise PaddleError(f"Paddle job 失败: {data.get('errorMsg')}")
             if time.monotonic() > deadline:
@@ -110,10 +117,15 @@ class PaddleClient:
                 continue
             try:
                 result = json.loads(line)["result"]
-            except (json.JSONDecodeError, KeyError):
-                continue  # 空行/非结果行容忍
-            for res in result.get("layoutParsingResults", []):
-                pages.append(res["markdown"]["text"])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue  # 空行/非 JSON/非对象行容忍
+            if not isinstance(result, dict):
+                continue  # result 非对象:整行跳过
+            for res in result.get("layoutParsingResults") or []:
+                try:
+                    pages.append(res["markdown"]["text"])
+                except (KeyError, TypeError):
+                    continue  # 单条缺 markdown/text 或类型异常:跳过该条,不中断整份下载
         return pages
 
     def parse_pdf(self, file_path: str) -> list[str]:
