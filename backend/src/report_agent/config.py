@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = "report-agent"
 
+    @property
+    def psycopg_dsn(self) -> str:
+        """psycopg(langgraph 追问记忆 checkpointer)只认 postgresql://;
+        postgres_dsn 是 SQLAlchemy 方言(默认 +asyncpg),直接传入会解析失败,故归一后派生。"""
+        dsn = self.postgres_dsn
+        if dsn.startswith("postgresql+") and "://" in dsn:
+            scheme, _, rest = dsn.partition("://")
+            dsn = f"{scheme.partition('+')[0]}://{rest}"
+        return dsn
+
 
 @lru_cache
 def get_settings() -> Settings:
