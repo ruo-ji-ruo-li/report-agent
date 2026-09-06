@@ -26,8 +26,8 @@ async def parse_report(file_path: str | None, source: str, settings: Settings, l
     vision_client = llms.vision if llms is not None else None
     if source == "photo":
         pages = [open(file_path, "rb").read()]  # noqa: SIM115, ASYNC230 —— 单页图片
-        items, meta = await parse_images(pages, vision_client)
-        return ParseOutput(items=items, meta=meta, method="vision")
+        items = await parse_images(pages, vision_client)
+        return ParseOutput(items=items, meta=ReportMeta(source="photo"), method="vision")
     if source == "pdf":
         parsed = parse_pdf_text(file_path, settings)
         if parsed is not None:
@@ -35,6 +35,6 @@ async def parse_report(file_path: str | None, source: str, settings: Settings, l
             return ParseOutput(items=items, meta=meta, method="unstructured")
         log.warning("pdf_text_insufficient_falling_back_to_vision", path=file_path)
         pages = render_pdf_pages(file_path)
-        items, meta = await parse_images(pages, vision_client)
-        return ParseOutput(items=items, meta=meta, method="vision")
+        items = await parse_images(pages, vision_client)
+        return ParseOutput(items=items, meta=ReportMeta(source="pdf"), method="vision")
     return None
