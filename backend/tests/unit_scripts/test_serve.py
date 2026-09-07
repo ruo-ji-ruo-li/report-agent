@@ -3,9 +3,12 @@
 scripts/ 不在包内, 用 importlib 按文件路径加载;
 build_alembic_config 只断言配置指向与解析结果, 不触发 upgrade。
 """
+import asyncio
 import importlib.util
+import sys
 from pathlib import Path
 
+import pytest
 from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -37,3 +40,25 @@ def test_parse_args_overrides():
     assert args.host == "0.0.0.0"
     assert args.port == 9000
     assert args.skip_migration is True
+
+
+def test_use_selector_loop_on_windows_switches_policy(monkeypatch):
+    """win32 分支: policy 应切为 WindowsSelectorEventLoopPolicy(psycopg async 只支持它);
+    monkeypatch sys.platform 使断言在任何平台可执行。"""
+    if not hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        pytest.skip("WindowsSelectorEventLoopPolicy 仅 Windows 提供")
+    prev = asyncio.get_event_loop_policy()
+    monkeypatch.setattr(sys, "platform", "win32")
+    try:
+        serve.use_selector_loop_on_windows()
+        assert isinstance(asyncio.get_event_loop_policy(), asyncio.WindowsSelectorEventLoopPolicy)
+    finally:
+        asyncio.set_event_loop_policy(prev)
+
+
+def test_use_selector_loop_noop_elsewhere(monkeypatch):
+    """非 win32 分支: no-op,policy 不变。"""
+    monkeypatch.setattr(sys, "platform", "linux")
+    prev = asyncio.get_event_loop_policy()
+    serve.use_selector_loop_on_windows()
+    assert asyncio.get_event_loop_policy() is prev

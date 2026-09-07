@@ -30,6 +30,8 @@ uv run python scripts/seed_draft.py --all      # LLM 起草种子(人工校对 Y
 uv run python scripts/seed_import.py --all     # 入库(增量: --entity CODE)
 uv run python scripts/serve.py                 # 一键启动: 幂等迁移(已是最新自动跳过) + 启动 API(默认 127.0.0.1:8000)
 # 或不迁移仅启动: uv run uvicorn report_agent.api.app:create_app --factory --port 8000
+#   (Windows 上请用 serve.py: uvicorn CLI 直启时事件循环已先于应用代码创建,无法切换,
+#    psycopg async 追问记忆 checkpointer 会降级)
 uv run python scripts/smoke.py                 # 端到端冒烟(见下方验收对照 1/3/4)
 
 # 评测(可选;评测集为空时 run_eval 会 exit 2)

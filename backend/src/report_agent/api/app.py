@@ -37,9 +37,10 @@ def create_app(deps_builder=None) -> FastAPI:
 
             # langgraph-checkpoint-postgres>=3: from_conn_string 是 async 上下文管理器,
             # 实例生命周期 = 连接生命周期,故 __aenter__ 于启动、__aexit__ 于关闭。
-            _chat_saver_cm = AsyncPostgresSaver.from_conn_string(settings.postgres_dsn)
+            # psycopg 与 postgres_dsn 的 SQLAlchemy 方言(+asyncpg)不兼容,传归一后的 psycopg_dsn。
+            _chat_saver_cm = AsyncPostgresSaver.from_conn_string(settings.psycopg_dsn)
             saver = await _chat_saver_cm.__aenter__()
-            saver.setup()
+            await saver.setup()  # 建 langgraph 表(CREATE IF NOT EXISTS,幂等);不 await 则协程为空操作
             app.state.chat_checkpointer = saver
             if settings.langsmith_tracing and settings.langsmith_api_key:
                 import os

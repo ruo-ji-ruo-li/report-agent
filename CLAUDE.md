@@ -8,9 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All code comments, docstrings, prompts, and user-facing text are in Chinese — match that convention. Design decisions in code comments cite the spec sections (e.g. `spec §11`, `F1/F3/F6`, `评审 Critical-1`).
 
-Docs:
+Docs(**注意:`docs/` 在 .gitignore 中,不入 git 仓库,只保留本地文件**——不要 `git add -f` docs):
 - `docs/requirements.md` — requirements + confirmed constraint decisions
 - `docs/superpowers/specs/2026-09-02-report-agent-design.md` — system design (spec; sections referenced throughout the code)
+- `docs/superpowers/specs/2026-09-06-report-agent-parse-upgrade-design.md` — 解析层升级设计(Paddle + 纯规则表格解析 + 表单元数据;取代旧 spec 解析章节)
 - `docs/superpowers/plans/2026-09-02-report-agent.md` — implementation plan (numbered tasks referenced in code docstrings, e.g. "Task 11")
 
 ## Layout
@@ -36,7 +37,7 @@ uv run alembic upgrade head
 
 # run the API — one command: idempotent alembic upgrade head, then uvicorn
 uv run python scripts/serve.py                # --host/--port/--skip-migration available
-uv run uvicorn report_agent.api.app:create_app --factory --port 8000   # serve only, no migration
+uv run uvicorn report_agent.api.app:create_app --factory --port 8000   # serve only, no migration (on Windows use scripts/serve.py instead — psycopg async needs a selector loop, which the CLI path cannot set up in time)
 
 # lint / tests
 uv run ruff check src tests scripts

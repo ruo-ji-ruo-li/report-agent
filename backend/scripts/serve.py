@@ -12,8 +12,16 @@
 asyncio.run(), 不能在已有事件循环内调用——故"先迁移、后 uvicorn.run"的顺序不可调换。
 --skip-migration 对应降级启动哲学(spec §11): 数据库暂不可达时仍允许带病启动服务,
 由应用 lifespan 自行降级告警, 但默认(不加该开关)迁移失败会直接阻止启动。
+
+Windows 另有一处事件循环约束: psycopg async(langgraph 追问记忆 checkpointer)只支持
+SelectorEventLoop, 而 uvicorn>=0.36 在 win32 默认硬编码 loop_factory=ProactorEventLoop
+并显式传给 asyncio.run, 会绕过事件循环 policy——故启动服务前切换 policy 并以
+loop="none" 让 uvicorn 回退按 policy 建循环(见 use_selector_loop_on_windows)。
+迁移阶段用的 asyncpg 两种循环都支持, 保持默认不受影响。
 """
 import argparse
+import asyncio
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -33,6 +41,15 @@ def build_alembic_config(root: Path) -> Config:
 def run_migrations(root: Path) -> None:
     """升级到最新迁移版本; 在已是最新版本的库上重复执行为 no-op(幂等)。"""
     command.upgrade(build_alembic_config(root), "head")
+
+
+def use_selector_loop_on_windows() -> None:
+    """Windows 下 psycopg async(langgraph 追问记忆 checkpointer)只支持 SelectorEventLoop;
+    而 uvicorn>=0.36 在 win32 硬编码 loop_factory=ProactorEventLoop 并显式传给 asyncio.run,
+    绕过事件循环 policy——故除设 policy 外, uvicorn.run 还须以 loop="none" 交回默认行为
+    (asyncio.run → new_event_loop → 按 policy 建循环)。非 Windows 平台为 no-op。"""
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -56,7 +73,16 @@ def main(argv: list[str] | None = None) -> None:
         run_migrations(ROOT)
         print("数据库迁移完成。")
     print(f"启动 API 服务 http://{args.host}:{args.port} (Ctrl-C 停止)...")
-    uvicorn.run("report_agent.api.app:create_app", factory=True, host=args.host, port=args.port)
+    use_selector_loop_on_windows()
+    # loop="none": 不让 uvicorn 自行选定循环工厂(win32 会硬编码 Proactor),
+    # 回退 asyncio.run 默认行为, 使上面设置的 Windows policy 生效。
+    uvicorn.run(
+        "report_agent.api.app:create_app",
+        factory=True,
+        host=args.host,
+        port=args.port,
+        loop="none",
+    )
 
 
 if __name__ == "__main__":
