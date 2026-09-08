@@ -16,6 +16,43 @@ ROOT = Path(__file__).resolve().parents[1]
 SEEDS_DIR = ROOT / "knowledge_seeds" / "indicators"
 PATTERNS_DIR = ROOT / "knowledge_seeds" / "patterns"
 
+# 约束与索引(KG 点查设计 §3):唯一约束让读侧点查与写侧 MERGE 走索引;
+# Alias.key 用普通索引(共享别名合法,LIMIT 1 任一命中,KG 点查设计 §5.3)
+CONSTRAINT_STATEMENTS: list[str] = [
+    (
+        "CREATE CONSTRAINT indicator_code_unique IF NOT EXISTS "
+        "FOR (i:Indicator) REQUIRE i.code IS UNIQUE"
+    ),
+    (
+        "CREATE CONSTRAINT pattern_name_unique IF NOT EXISTS "
+        "FOR (p:Pattern) REQUIRE p.name IS UNIQUE"
+    ),
+    (
+        "CREATE CONSTRAINT condition_name_unique IF NOT EXISTS "
+        "FOR (c:Condition) REQUIRE c.name IS UNIQUE"
+    ),
+    (
+        "CREATE CONSTRAINT cluster_name_unique IF NOT EXISTS "
+        "FOR (cl:IndicatorCluster) REQUIRE cl.name IS UNIQUE"
+    ),
+    (
+        "CREATE CONSTRAINT department_name_unique IF NOT EXISTS "
+        "FOR (d:Department) REQUIRE d.name IS UNIQUE"
+    ),
+    (
+        "CREATE CONSTRAINT intervention_key_unique IF NOT EXISTS "
+        "FOR (iv:Intervention) REQUIRE iv.key IS UNIQUE"
+    ),
+    "CREATE INDEX alias_key_idx IF NOT EXISTS FOR (a:Alias) ON (a.key)",
+]
+
+
+def ensure_constraints(session) -> None:
+    """幂等创建约束/索引。存量重复节点会导致创建失败 —— 异常上抛,
+    main() 捕获后打印明确错误退出(种子是唯一写方,预期不会发生)。"""
+    for stmt in CONSTRAINT_STATEMENTS:
+        session.run(stmt)
+
 
 def upsert_indicator(session, seed) -> None:
     session.run(
@@ -159,6 +196,8 @@ async def main() -> None:
     driver = GraphDatabase.driver(s.neo4j_uri, auth=(s.neo4j_user, s.neo4j_password))
     seeds: list[IndicatorSeed] = []
     try:
+        with driver.session(database=s.neo4j_database) as session:
+            ensure_constraints(session)
         for path in sorted(SEEDS_DIR.glob("*.yaml")):
             code = path.stem
             if not args.all and code not in (args.entity or []):
