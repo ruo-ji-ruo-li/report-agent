@@ -1,7 +1,6 @@
 import asyncio
 
 from report_agent.knowledge.kg_client import IndicatorEntry
-from report_agent.llm.client import LLMError
 from report_agent.parsing.normalizer import Normalizer, convert_value, match_indicator
 from report_agent.parsing.schemas import RawReportItem
 
@@ -55,35 +54,11 @@ def test_normalize_marks_unmapped_and_keeps_flow():
         RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
                       unit="u", ref_range_text=None, abnormal_flag=None),
     ]
-    out = asyncio.run(n.normalize(raws))  # llm=None:不做 LLM 映射
+    out = asyncio.run(n.normalize(raws))
     assert out[0].indicator_code == "GLU"
     assert out[0].range_from == "report"
     assert out[1].indicator_code is None  # unmapped 保留继续
     assert out[1].name == "神秘指标X"
-
-
-def test_normalize_llm_map_fallback_keeps_unknown():
-    class FakeLLM:
-        async def complete_json(self, messages, retry_feedback=True):
-            raise LLMError("down")
-
-    n = Normalizer(ENTRIES)
-    raws = [RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
-                          unit=None, ref_range_text=None, abnormal_flag=None)]
-    out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
-    assert out[0].indicator_code is None  # LLM 挂 → 规则兜底 unknown
-
-
-def test_normalize_llm_non_dict_json_treated_as_failure():
-    class FakeLLM:
-        async def complete_json(self, messages, retry_feedback=True):
-            return []  # 合法 JSON 但非 dict → 视同失败,不得冒泡 AttributeError
-
-    n = Normalizer(ENTRIES)
-    raws = [RawReportItem(name="神秘指标X", value_text="1", value_num=1.0,
-                          unit=None, ref_range_text=None, abnormal_flag=None)]
-    out = asyncio.run(n.normalize(raws, llm=FakeLLM()))
-    assert out[0].indicator_code is None  # 非 dict → unknown 保留继续
 
 
 def test_normalize_prefers_raw_code_and_falls_back():

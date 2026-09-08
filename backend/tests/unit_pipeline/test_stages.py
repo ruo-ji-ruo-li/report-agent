@@ -170,8 +170,8 @@ class FakeNormalizer:
         self.out = out or []
         self.calls = []
 
-    async def normalize(self, raw_items, llm=None):
-        self.calls.append((list(raw_items), llm))
+    async def normalize(self, raw_items):
+        self.calls.append(list(raw_items))
         return self.out
 
 
@@ -298,8 +298,7 @@ def test_normalize_stage_converts_but_keeps_raw_original_values():
     ctx = StageContext(task_id="t1", report=report, db=db, deps=deps)
     payload = asyncio.run(normalize_stage(ctx))
     assert payload == {"n_items": 1}
-    assert norm.calls[0][0] == raws
-    assert norm.calls[0][1] is deps.llms.chat
+    assert norm.calls[0] == raws  # llm 参数已删除:不再记录 chat llm
     saved = db.saved_norm
     assert saved == converted
     assert saved[0].value_num == 122.4  # 标准单位值已换算

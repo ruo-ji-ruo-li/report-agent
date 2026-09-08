@@ -73,7 +73,7 @@ async def parse_stage(ctx: StageContext) -> dict:
 @register("normalize")
 async def normalize_stage(ctx: StageContext) -> dict:
     raw_items = await ctx.db.get_raw_items(ctx.report["id"])
-    items = await ctx.deps.normalizer.normalize(raw_items, llm=ctx.deps.llms.chat)
+    items = await ctx.deps.normalizer.normalize(raw_items)
     # F3: 报告级先删后写 —— 词典升级后"只重跑归一化及以下阶段"(spec §4.1)可执行
     await ctx.db.delete_normalized(ctx.report["id"])
     await ctx.db.save_normalized(ctx.report["id"], items)

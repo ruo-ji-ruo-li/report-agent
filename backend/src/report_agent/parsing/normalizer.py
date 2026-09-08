@@ -1,9 +1,8 @@
-"""归一化:词典匹配(规则) → 单位换算(按指标) → 未命中批量 LLM 映射(增强)→ unknown 兜底。"""
+"""归一化:词典匹配(规则) → 单位换算(按指标)。未命中保持 unmapped ——
+LLM alias_map 兜底已删除(KG 点查设计 §6.2),每次解析不再向 LLM 发送全量目录。"""
 import re
 
 from report_agent.knowledge.kg_client import IndicatorEntry, _norm_text
-from report_agent.llm.client import LLMError
-from report_agent.llm.prompts import load_prompt
 from report_agent.observability import get_logger
 from report_agent.parsing.schemas import NormalizedItem, RawReportItem
 
@@ -50,39 +49,18 @@ def convert_value(value: float, from_unit: str | None, entry: IndicatorEntry) ->
     return value, from_unit  # 无换算表 → 原值原单位,判定用报告区间
 
 
-async def map_unknown_names(
-    names: list[str], entries: list[IndicatorEntry], llm
-) -> dict[str, str | None]:
-    """未命中项批量一次 LLM 调用尝试映射(候选列表 + JSON 输出);失败全 None。"""
-    prompt = load_prompt("alias_map")
-    catalog = [{"code": e.code, "name": e.name, "aliases": e.aliases} for e in entries]
-    messages = [
-        {"role": "user", "content": prompt.format(catalog=repr(catalog), names=repr(names))},
-    ]
-    try:
-        result = await llm.complete_json(messages)
-        if not isinstance(result, dict):
-            log.warning("alias_map_llm_bad_shape", shape=type(result).__name__)
-            return {n: None for n in names}
-        return {k: (v if v in {e.code for e in entries} else None) for k, v in result.items()}
-    except LLMError as e:
-        log.warning("alias_map_llm_failed", error=str(e))
-        return {n: None for n in names}
-
-
 class Normalizer:
     def __init__(self, entries: list[IndicatorEntry]):
         self._entries = entries
 
     async def normalize(
-        self, raw_items: list[RawReportItem], llm=None
+        self, raw_items: list[RawReportItem]
     ) -> list[NormalizedItem]:
         out: list[NormalizedItem] = []
-        unknown_raises: list[int] = []
         codes = {e.code for e in self._entries}
         for idx, raw in enumerate(raw_items):
             # spec §10: raw.code 优先 —— 缩写列直接作为 indicator_code;
-            # 不在 KG 目录中 → 回退 name 匹配 → 回退 LLM alias_map
+            # 不在 KG 目录中 → 回退 name 匹配;不中则 unmapped(KG 点查设计 §6.2)
             code = raw.code if raw.code in codes else None
             if code is None:
                 code = match_indicator(raw.name, self._entries)
@@ -97,16 +75,5 @@ class Normalizer:
                 entry = next(e for e in self._entries if e.code == code)
                 if raw.value_num is not None:
                     item.value_num, item.unit = convert_value(raw.value_num, raw.unit, entry)
-            else:
-                unknown_raises.append(idx)
             out.append(item)
-
-        if unknown_raises and llm is not None:
-            mapping = await map_unknown_names(
-                [raw_items[i].name for i in unknown_raises], self._entries, llm
-            )
-            for i, idx in enumerate(unknown_raises):
-                code = mapping.get(raw_items[idx].name)
-                if code:
-                    out[idx].indicator_code = code
         return out

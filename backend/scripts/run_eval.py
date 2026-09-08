@@ -55,7 +55,7 @@ async def main() -> None:
         raws = [RawReportItem(**{k: v for k, v in r.items() if k != "section"})
                 for r in data["raw_items"]]
         # 1) 解析准确率:归一化 F1(全量)
-        items = await deps.normalizer.normalize(raws, llm=deps.llms.chat)
+        items = await deps.normalizer.normalize(raws)
         pred = [it.indicator_code for it in items]
         gt = [data["gt_codes"].get(r["name"]) for r in data["raw_items"]]
         f1s.append(compute_code_f1(pred, gt))
