@@ -148,6 +148,8 @@ def match_patterns(
     status_low = {ItemStatus.LOW, ItemStatus.CRITICAL_LOW}
     matched = []
     for p in patterns:
+        if not p.criteria:
+            continue  # 空 criteria 模式永不命中(KG 点查设计 §4.2)
         hits: list[ItemJudgment] = []
         ok = True
         for c in p.criteria:

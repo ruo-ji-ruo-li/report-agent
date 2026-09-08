@@ -180,3 +180,12 @@ def test_select_range_narrowest_window_overlap():
                        critical_low=None, critical_high=None, unit=None, source_note=None)
     # 两条 any 同时命中 30 岁 → 取最窄年龄窗(min 在多候选上真正生效)
     assert select_range([wide, narrow], None, 30) == narrow
+
+
+def test_match_patterns_skips_empty_criteria():
+    # 空 criteria 恒命中 quirk(KG 点查设计 §4.2):无任何要求的模式不是模式
+    j = ItemJudgment(indicator_code="GLU", name="空腹血糖", value_num=6.5, value_text=None,
+                     unit="mmol/L", status=ItemStatus.HIGH, ref_low=None, ref_high=None,
+                     critical=False, range_source="report")
+    p = PatternSpec(name="空模式", description="d", criteria=[])
+    assert match_patterns([j], [p]) == []
