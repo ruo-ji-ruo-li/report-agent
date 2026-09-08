@@ -96,9 +96,10 @@ async def compare_stage(ctx: StageContext) -> dict:
     await ctx.db.apply_judgments(ctx.report["id"], judgments)
     abnormal = [j for j in judgments if j.status.value not in ("normal", "unknown", "unmapped")]
     critical = [j for j in abnormal if j.critical]
+    codes = {j.indicator_code for j in judgments if j.indicator_code}
     matched = [
         (p.name, [j.name for j in js])
-        for p, js in match_patterns(judgments, ctx.deps.kg.all_patterns())
+        for p, js in match_patterns(judgments, ctx.deps.kg.patterns_for(codes))
     ]
     return {
         "n_abnormal": len(abnormal),

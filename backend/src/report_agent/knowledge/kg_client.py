@@ -193,11 +193,16 @@ class KGClient:
         return ctx
 
     # ---------- 组合模式 ----------
-    def all_patterns(self) -> list[PatternSpec]:
+    def patterns_for(self, codes: set[str]) -> list[PatternSpec]:
+        """按报告指标码定向取模式(KG 点查设计 §4.1):只返回 REQUIRES 指向
+        codes 内指标的模式,行数与报告指标数成正比,与 KG 模式总量无关。"""
         rows = self._query(
-            "MATCH (p:Pattern) OPTIONAL MATCH (p)-[r:REQUIRES]->(i:Indicator) "
-            "RETURN p.name AS name, p.description AS description, p.criteria_json AS criteria_json, "
-            "COLLECT({code: i.code, direction: r.direction}) AS criteria"
+            "MATCH (p:Pattern)-[r:REQUIRES]->(i:Indicator) "
+            "WHERE i.code IN $codes "
+            "RETURN p.name AS name, p.description AS description, "
+            "p.criteria_json AS criteria_json, "
+            "COLLECT({code: i.code, direction: r.direction}) AS criteria",
+            codes=list(codes),
         )
         out = []
         for r in rows:
@@ -206,8 +211,8 @@ class KGClient:
                 for c in r.get("criteria", [])
                 if c.get("code")
             ]
-            # 完整性防线:REQUIRES 边只会在成员指标已入库时建立(导入顺序无关);
-            # 边数与 criteria_json 基准不一致 → 该模式数据未就绪,跳过以防单条件误命中。
+            # 完整性防线(KG 点查设计 §4.1):criteria 数与 criteria_json 基准不一致
+            # → 部分取回(要求了报告外指标,本来也不可能命中)或导入未就绪,静默跳过。
             # criteria_json 缺失(None,旧数据)视为无基准,不校验(向后兼容)
             raw_json = r.get("criteria_json")
             baseline = None
@@ -218,10 +223,6 @@ class KGClient:
                     log.warning("pattern_criteria_json_invalid", pattern=r["name"])
                     continue
             if isinstance(baseline, list) and len(baseline) != len(criteria):
-                log.warning(
-                    "pattern_criteria_incomplete",
-                    pattern=r["name"], expected=len(baseline), found=len(criteria),
-                )
                 continue
             out.append(PatternSpec(
                 name=r["name"], description=r.get("description") or "", criteria=criteria,

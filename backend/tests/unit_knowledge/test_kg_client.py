@@ -49,9 +49,12 @@ class FakeSession:
 class FakeDriver:
     def __init__(self, records_by_query):
         self.records_by_query = records_by_query
+        self.sessions = []
 
     def session(self, **kw):
-        return FakeSession(self.records_by_query)
+        s = FakeSession(self.records_by_query)
+        self.sessions.append(s)
+        return s
 
 
 def _client(driver, monkeypatch):
@@ -118,7 +121,7 @@ def test_range_specs_maps_fields(monkeypatch):
     assert r.source_note == "检验科参考"
 
 
-def test_all_patterns_maps_criteria(monkeypatch):
+def test_patterns_for_maps_criteria_and_passes_codes(monkeypatch):
     # criteria 是 COLLECT 产出的嵌套 dict 列表;description 缺失时回落为空串。
     recs = [
         FakeRecord({
@@ -128,8 +131,11 @@ def test_all_patterns_maps_criteria(monkeypatch):
         }),
         FakeRecord({"name": "空模式", "description": None, "criteria": []}),
     ]
-    c = _client(FakeDriver({"all": recs}), monkeypatch)
-    pats = c.all_patterns()
+    driver = FakeDriver({"all": recs})
+    c = _client(driver, monkeypatch)
+    pats = c.patterns_for({"TG", "GLU"})
+    # codes 参数透传(list 序列化,顺序无关)
+    assert sorted(driver.sessions[-1].last[1]["codes"]) == ["GLU", "TG"]
     assert [p.name for p in pats] == ["高TG高GLU", "空模式"]
     p0 = pats[0]
     assert p0.description == "两项同时升高"
@@ -189,8 +195,9 @@ def test_parse_conversions_handles_str_dict_and_garbage():
     assert _parse_conversions("[]") == {}  # 合法 JSON 但非 dict
 
 
-def test_all_patterns_skips_incomplete_criteria(monkeypatch):
-    # 真实 smoke:成员指标未全部入库时 REQUIRES 边不全 → 按 criteria_json 基准跳过,防单条件误命中
+def test_patterns_for_skips_incomplete_criteria(monkeypatch):
+    # KG 点查设计 §4.1:criteria 数与 criteria_json 基准不一致(部分取回/导入未就绪)
+    # → 静默跳过,防单条件误命中。criteria_json 缺失(旧数据)不校验。
     recs = [
         FakeRecord({"name": "代谢综合征倾向", "description": "d",
                     "criteria_json": '[{"indicator_code": "TG", "direction": "high"}, '
@@ -203,4 +210,10 @@ def test_all_patterns_skips_incomplete_criteria(monkeypatch):
                     "criteria": []}),  # 基准 0 == 边 0 → 保留
     ]
     c = _client(FakeDriver({"all": recs}), monkeypatch)
-    assert [p.name for p in c.all_patterns()] == ["完整模式", "空模式"]
+    assert [p.name for p in c.patterns_for({"GLU"})] == ["完整模式", "空模式"]
+
+
+def test_patterns_for_returns_empty_when_no_rows(monkeypatch):
+    c = _client(FakeDriver({}), monkeypatch)
+    assert c.patterns_for({"TG"}) == []
+    assert c.patterns_for(set()) == []

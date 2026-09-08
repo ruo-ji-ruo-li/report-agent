@@ -136,7 +136,7 @@ class FakeKG:
         self.range_calls.append(code)
         return self.specs.get(code, [])
 
-    def all_patterns(self):
+    def patterns_for(self, codes):
         return self.patterns
 
     def indicator_context(self, code):
