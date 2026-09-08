@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AxiosInstance } from 'axios'
 import { createReportFromFile, createReportManual, getReport, patchReportMeta } from '../src/api/reports'
 import { getTask } from '../src/api/tasks'
-import { createChatSession, getChatHistory } from '../src/api/chat'
+import { createChatSession, getChatHistory, listChatSessions } from '../src/api/chat'
 
 function mockClient(data: unknown) {
   const post = vi.fn().mockResolvedValue({ data })
@@ -51,6 +51,14 @@ describe('api 模块', () => {
     await patchReportMeta('r1', { sex: 'female' }, c)
     expect(c.patch).toHaveBeenCalledWith('/reports/r1/meta', { sex: 'female' })
     await createChatSession('r1', c); expect(c.post).toHaveBeenCalledWith('/reports/r1/chat/sessions')
+    await listChatSessions('r1', c); expect(c.get).toHaveBeenCalledWith('/reports/r1/chat/sessions')
     await getChatHistory('s1', c); expect(c.get).toHaveBeenCalledWith('/chat/sessions/s1/history')
+  })
+
+  it('listChatSessions 返回会话列表数组', async () => {
+    const c = mockClient({ sessions: [{ session_id: 's1', created_at: null, message_count: 2, preview: '血糖偏高怎么调理' }] })
+    const rows = await listChatSessions('r1', c)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].session_id).toBe('s1')
   })
 })

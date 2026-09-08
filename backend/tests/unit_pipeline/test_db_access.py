@@ -168,6 +168,43 @@ async def test_unparsed_tables_delete_then_insert_and_section_map(store):
     assert await da.get_section_map() == {"白细胞计数": "血常规"}
 
 
+async def test_list_sessions_filters_empty_orders_desc_and_previews(store):
+    """追问会话列表:只返回有消息的会话(过滤历史空会话),created_at 倒序;
+    preview = 首条 user 提问截断(无 user 消息回退最早消息),计数 = 消息总条数。"""
+    da, factory = store
+    rid = await _mk_report(da)
+    from datetime import UTC, datetime, timedelta
+
+    async with factory() as s:
+        # sqlite 方言落库时丢弃 tzinfo,仅满足 DTZ001;读回 naive,断言不依赖 tz
+        base = datetime(2026, 9, 8, 10, 0, 0, tzinfo=UTC)
+        empty = models.ChatSession(report_id=rid, created_at=base - timedelta(minutes=10))
+        older = models.ChatSession(report_id=rid, created_at=base)
+        newer = models.ChatSession(report_id=rid, created_at=base + timedelta(minutes=2))
+        s.add_all([empty, older, newer])
+        await s.flush()
+        s.add_all([
+            models.ChatMessage(session_id=older.id, role="user",
+                               content="血糖偏高怎么调理", created_at=base),
+            models.ChatMessage(session_id=older.id, role="assistant",
+                               content="建议饮食调整……", created_at=base + timedelta(minutes=1)),
+            models.ChatMessage(session_id=newer.id, role="user",
+                               content="转氨酶升高严重吗" + "补充说明" * 15,
+                               created_at=base + timedelta(minutes=2)),
+        ])
+        await s.commit()
+        want = {"older": older.id, "newer": newer.id}
+    rows = await da.list_sessions(rid)
+    assert [r["session_id"] for r in rows] == [want["newer"], want["older"]]  # 最近在前
+    assert rows[0]["message_count"] == 1
+    assert rows[0]["preview"].startswith("转氨酶升高严重吗")
+    assert len(rows[0]["preview"]) <= 30  # 截断作会话标题
+    assert rows[1]["message_count"] == 2
+    assert rows[1]["preview"] == "血糖偏高怎么调理"
+    assert rows[1]["created_at"] is not None
+    assert await da.list_sessions("no-such-report") == []
+
+
 async def test_get_report_detail_section_from_mapping(store):
     da, factory = store
     rid = await _mk_report(da)

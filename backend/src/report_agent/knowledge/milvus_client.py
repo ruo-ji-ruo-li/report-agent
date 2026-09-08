@@ -120,6 +120,12 @@ class MilvusStore:
         )
         self._client.flush(self.collection)
 
+    def delete_entity_type(self, entity_type: str) -> None:
+        """按 entity_type 整类删除(全量重建场景:一条 delete + 一次 flush)。"""
+        assert "'" not in entity_type, f"非法 entity_type(含单引号): {entity_type}"
+        self._client.delete(self.collection, filter=f"entity_type == '{entity_type}'")
+        self._client.flush(self.collection)
+
     def search_dense(self, embedding: list[float], top_k: int) -> list[ScoredChunk]:
         res = self._client.search(
             collection_name=self.collection, data=[embedding], anns_field="dense_vec",

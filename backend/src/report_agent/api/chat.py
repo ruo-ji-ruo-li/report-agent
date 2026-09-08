@@ -25,6 +25,15 @@ async def create_session(report_id: str, request: Request):
     return {"session_id": session_id}
 
 
+@router.get("/reports/{report_id}/chat/sessions")
+async def list_sessions(report_id: str, request: Request):
+    """追问会话列表:该报告下有消息的会话,最近在前(前端追问面板左侧记录栏)。"""
+    detail = await request.app.state.db_access.get_report_detail(report_id)
+    if detail is None:
+        raise HTTPException(404, "报告不存在")
+    return {"sessions": await request.app.state.db_access.list_sessions(report_id)}
+
+
 @router.post("/chat/sessions/{session_id}/messages")
 async def send_message(session_id: str, body: ChatIn, request: Request):
     session = await request.app.state.db_access.get_session(session_id)

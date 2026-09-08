@@ -64,15 +64,24 @@ class _StubHandler(BaseHTTPRequestHandler):
 
 class FakeDBA:
     def __init__(self):
+        self.reports = {"r1"}
         self.sessions = {"s1": {"id": "s1", "report_id": "r1"}}
         self.messages = []
+        self.listed: list[str] = []  # list_sessions 收到的 report_id(端点传参断言)
 
     async def get_report_detail(self, report_id):
+        if report_id not in self.reports:
+            return None
         # normalized 带数值:让 _STUB_ANSWER 的 6.5/6.1 通过数字一致性护栏(PASS)
         return {"meta": {"sex": "male", "age": 40}, "items": [], "normalized": [
             {"item_name": "空腹血糖", "indicator_code": "GLU", "value_num": 6.5,
              "unit": "mmol/L", "status": "high", "ref_low": 3.9, "ref_high": 6.1,
              "critical": False, "section": "生化"}]}
+
+    async def list_sessions(self, report_id, limit=50):
+        self.listed.append(report_id)
+        return [{"session_id": "s1", "created_at": "2026-09-08T10:00:00",
+                 "message_count": 2, "preview": "血糖偏高怎么调理"}]
 
     async def create_session(self, report_id):
         sid = "s1"
@@ -108,6 +117,23 @@ def test_create_chat_session():
     resp = client.post("/api/reports/r1/chat/sessions")
     assert resp.status_code == 200
     assert resp.json()["session_id"] == "s1"
+
+
+def test_list_chat_sessions():
+    """追问会话列表端点:透传 db_access.list_sessions,报告不存在 404。"""
+    client, app = _client()
+    resp = client.get("/api/reports/r1/chat/sessions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert [s["session_id"] for s in data["sessions"]] == ["s1"]
+    assert data["sessions"][0]["preview"] == "血糖偏高怎么调理"
+    assert data["sessions"][0]["message_count"] == 2
+    assert app.state.db_access.listed == ["r1"]
+
+
+def test_list_chat_sessions_report_not_found():
+    client, _ = _client()
+    assert client.get("/api/reports/nope/chat/sessions").status_code == 404
 
 
 def test_chat_session_not_found():

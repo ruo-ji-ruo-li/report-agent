@@ -127,6 +127,18 @@ def test_upsert_and_delete_entity(monkeypatch):
     assert fake.deleted_filters[0] == "entity_type == 'indicator' and entity_id == 'GLU'"
 
 
+def test_delete_entity_type(monkeypatch):
+    import report_agent.knowledge.milvus_client as m
+
+    fake = FakeMilvus()
+    fake.collections.add("kb")
+    monkeypatch.setattr(m, "MilvusClient", lambda **kw: fake)
+    store = MilvusStore(uri="http://x", collection="kb", embedding_dim=1024)
+    store.delete_entity_type("condition")
+    assert fake.deleted_filters[0] == "entity_type == 'condition'"
+    assert fake.flushed  # 删除后必须 flush,后续 insert 才不会被 Bounded 一致性掩盖旧数据
+
+
 def test_search_dense_and_fulltext(monkeypatch):
     import report_agent.knowledge.milvus_client as m
 

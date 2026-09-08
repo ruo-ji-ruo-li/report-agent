@@ -328,3 +328,57 @@ class DataAccess:
                  "created_at": r.created_at.isoformat() if r.created_at else None}
                 for r in rows
             ]
+
+    async def list_sessions(self, report_id: str, limit: int = 50) -> list[dict]:
+        """追问会话列表:只返回有消息的会话(过滤历史遗留空会话),created_at 倒序。
+
+        preview = 该会话首条 user 提问截断 30 字作标题(无 user 消息回退最早消息,
+        正常流程 user 消息先于回答落库,回退仅防御持久化失败场景)。
+        两步查询 + 窗口函数取首条,避免加载全部消息内容与 lateral 复杂 SQL。
+        """
+        from sqlalchemy import func, select
+
+        from report_agent.db.models import ChatMessage, ChatSession
+
+        async with self._factory() as s:
+            rows = (await s.execute(
+                select(ChatSession.id, ChatSession.created_at)
+                .where(ChatSession.report_id == report_id,
+                       select(ChatMessage.id)
+                       .where(ChatMessage.session_id == ChatSession.id)
+                       .exists())
+                .order_by(ChatSession.created_at.desc())
+                .limit(limit)
+            )).all()
+            if not rows:
+                return []
+            ids = [r.id for r in rows]
+            counts = dict((await s.execute(
+                select(ChatMessage.session_id, func.count())
+                .where(ChatMessage.session_id.in_(ids))
+                .group_by(ChatMessage.session_id)
+            )).all())
+            # (role != 'user', created_at) 排序:user 行整体排在非 user 之前,组内按时间;
+            # 每会话取 rn=1 即"首条 user 提问",无 user 消息的会话回退最早消息
+            head = (
+                select(
+                    ChatMessage.session_id.label("sid"),
+                    ChatMessage.content.label("content"),
+                    func.row_number().over(
+                        partition_by=ChatMessage.session_id,
+                        order_by=(ChatMessage.role != "user", ChatMessage.created_at),
+                    ).label("rn"),
+                )
+                .where(ChatMessage.session_id.in_(ids))
+                .subquery()
+            )
+            previews = dict((await s.execute(
+                select(head.c.sid, head.c.content).where(head.c.rn == 1)
+            )).all())
+            return [
+                {"session_id": r.id,
+                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                 "message_count": counts.get(r.id, 0),
+                 "preview": (previews.get(r.id) or "")[:30]}
+                for r in rows
+            ]
