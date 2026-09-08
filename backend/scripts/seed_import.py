@@ -130,8 +130,8 @@ async def import_entity(session, store, llms, settings, seed) -> None:
     chunks = chunk_documents([doc], settings)
     texts = [c.text for c in chunks]
     embs = []
-    for i in range(0, len(texts), 100):
-        embs.extend(await llms.embedding.embed_texts(texts[i:i + 100]))
+    for i in range(0, len(texts), 10):
+        embs.extend(await llms.embedding.embed_texts(texts[i:i + 10]))
     await asyncio.to_thread(store.delete_entity, "indicator", seed.code)
     await asyncio.to_thread(store.upsert_chunks, chunks, embs)
     print(f"[done] indicator {seed.code}: {len(chunks)} chunks")
