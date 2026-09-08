@@ -67,9 +67,17 @@ def upsert_indicator(session, seed) -> None:
     # 只删 Indicator 的出边;Condition/Cluster/Intervention/Department 是共享节点,不删。
     session.run(
         "MATCH (i:Indicator {code: $code})"
-        "-[r:HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION]->() DELETE r",
+        "-[r:HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION|HAS_ALIAS]->() DELETE r",
         code=seed.code,
     )
+    # 别名节点(KG 点查设计 §5.1/§5.2):name+aliases 原样入 Alias.key,
+    # 不做任何归一化/变体预生成 —— 变体在查询时生成(§5.3)
+    for key in dict.fromkeys([seed.name, *seed.aliases]):
+        session.run(
+            "MERGE (a:Alias {key: $key}) WITH a "
+            "MATCH (i:Indicator {code: $code}) MERGE (i)-[:HAS_ALIAS]->(a)",
+            key=key, code=seed.code,
+        )
     session.run(
         "MATCH (i:Indicator {code: $code})-[r:HAS_RANGE]->(rs:RangeSpec) DETACH DELETE rs",
         code=seed.code,
@@ -117,6 +125,7 @@ def upsert_indicator(session, seed) -> None:
     # 必须 DETACH(plain DELETE 会在节点仍有关系时报错)。
     session.run("MATCH (rs:RangeSpec) WHERE NOT (rs)<--() DELETE rs")
     session.run("MATCH (iv:Intervention) WHERE NOT (iv)<--() DETACH DELETE iv")
+    session.run("MATCH (a:Alias) WHERE NOT (a)<--() DELETE a")
 
 
 def _attach_departments(session, seed) -> None:

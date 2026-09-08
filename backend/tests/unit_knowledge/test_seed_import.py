@@ -2,9 +2,10 @@
 
 upsert_indicator 的收敛语义(修复 I1):
 - 实体重跑时先收敛删除该 Indicator 的全部出边——HAS_RANGE 目标节点 DETACH 删除
-  (防 RangeSpec 孤儿累积)、HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION
+  (防 RangeSpec 孤儿累积)、HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION|HAS_ALIAS
   边全部删除——再按 YAML 重建;种子 YAML 删除/改名项才会从图消失;
-- 重建结束后全局孤儿清扫(RangeSpec / 无主 Intervention),不留垃圾节点。
+- 别名节点随收敛后按 name+aliases 原样重建(KG 点查设计 §5.2);
+- 重建结束后全局孤儿清扫(RangeSpec / 无主 Intervention / 无主 Alias),不留垃圾节点。
 """
 import sys
 from pathlib import Path
@@ -22,13 +23,14 @@ from report_agent.knowledge.seed_schemas import (
 
 CONVERGE_EDGES = (
     "MATCH (i:Indicator {code: $code})"
-    "-[r:HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION]->() DELETE r"
+    "-[r:HIGH_SUGGESTS|LOW_SUGGESTS|PART_OF|DEFAULT_INTERVENTION|HAS_ALIAS]->() DELETE r"
 )
 DETACH_RANGES = (
     "MATCH (i:Indicator {code: $code})-[r:HAS_RANGE]->(rs:RangeSpec) DETACH DELETE rs"
 )
 SWEEP_RANGESPEC = "MATCH (rs:RangeSpec) WHERE NOT (rs)<--() DELETE rs"
 SWEEP_INTERVENTION = "MATCH (iv:Intervention) WHERE NOT (iv)<--() DETACH DELETE iv"
+SWEEP_ALIAS = "MATCH (a:Alias) WHERE NOT (a)<--() DELETE a"
 
 
 class FakeSession:
@@ -58,7 +60,7 @@ def _seed(high_conditions=("糖尿病风险",)) -> IndicatorSeed:
 
 
 def test_upsert_indicator_statement_sequence_converges():
-    """单次导入的语句序:SET → 出边收敛 → RangeSpec DETACH 重建 → 重建各边 → 孤儿清扫。"""
+    """单次导入的语句序:SET → 出边收敛 → Alias 原样写入 → RangeSpec DETACH 重建 → 重建各边 → 孤儿清扫。"""
     sess = FakeSession()
     upsert_indicator(sess, _seed())
 
@@ -67,11 +69,16 @@ def test_upsert_indicator_statement_sequence_converges():
     # 收敛删除紧跟 SET(重建各边之前),参数锚定该实体
     assert texts[1] == CONVERGE_EDGES
     assert sess.statements[1][1] == {"code": "GLU"}
+    # 别名原样写入紧随收敛(HAS_ALIAS 已随出边收敛清空再重建):name + aliases 各一条
+    alias_writes = [i for i, q in enumerate(texts) if "MERGE (a:Alias {key: $key})" in q]
+    assert alias_writes == [2, 3]
+    assert [sess.statements[i][1]["key"] for i in alias_writes] == ["空腹血糖", "血糖"]
     # RangeSpec 重建路径:先 DETACH DELETE 旧节点(防孤儿累积),后 CREATE 新区间
-    assert texts[2] == DETACH_RANGES
-    assert sess.statements[2][1] == {"code": "GLU"}
+    range_detach = texts.index(DETACH_RANGES)
+    assert range_detach > alias_writes[-1]
+    assert sess.statements[range_detach][1] == {"code": "GLU"}
     first_range_create = next(i for i, q in enumerate(texts) if "CREATE (i)-[:HAS_RANGE]" in q)
-    assert first_range_create > 2
+    assert first_range_create > range_detach
     # 收敛先于任何关系重建(HIGH_SUGGESTS rel 重建片段出现在收敛之后)
     first_rel_rebuild = next(
         i for i, q in enumerate(texts) if "[r:HIGH_SUGGESTS]" in q or "[r:LOW_SUGGESTS]" in q
@@ -80,7 +87,8 @@ def test_upsert_indicator_statement_sequence_converges():
     # 孤儿清扫在重建(含 _attach_departments 合成建议)之后执行
     assert SWEEP_RANGESPEC in texts and SWEEP_INTERVENTION in texts
     sweep_iv = texts.index(SWEEP_INTERVENTION)
-    assert sweep_iv == len(texts) - 1
+    assert texts[-1] == SWEEP_ALIAS  # Alias 孤儿清扫兜底(KG 点查设计 §5.2)
+    assert sweep_iv == len(texts) - 2
     assert any("建议专科门诊咨询" in q for q in texts[:sweep_iv])
 
 
