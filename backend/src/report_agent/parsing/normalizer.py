@@ -1,27 +1,13 @@
 """归一化:词典匹配(规则) → 单位换算(按指标) → 未命中批量 LLM 映射(增强)→ unknown 兜底。"""
 import re
 
-from report_agent.knowledge.kg_client import IndicatorEntry
+from report_agent.knowledge.kg_client import IndicatorEntry, _norm_text
 from report_agent.llm.client import LLMError
 from report_agent.llm.prompts import load_prompt
 from report_agent.observability import get_logger
 from report_agent.parsing.schemas import NormalizedItem, RawReportItem
 
 log = get_logger(__name__)
-
-
-def _norm_text(s: str) -> str:
-    """全角→半角、去空白、小写。用于匹配索引。"""
-    out = []
-    for ch in s:
-        code = ord(ch)
-        if code == 0x3000:
-            out.append(" ")
-        elif 0xFF01 <= code <= 0xFF5E:
-            out.append(chr(code - 0xFEE0))
-        else:
-            out.append(ch)
-    return re.sub(r"\s+", "", "".join(out)).lower()
 
 
 def _match_keys(entry: IndicatorEntry) -> list[str]:

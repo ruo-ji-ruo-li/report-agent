@@ -4,6 +4,7 @@
 上层(RRF/规则)自然吸收空结果——spec §11 降级总览。
 """
 import json
+import re
 from dataclasses import dataclass, field
 
 from neo4j import GraphDatabase
@@ -94,6 +95,50 @@ def _parse_conversions(raw) -> dict[str, float]:
         except json.JSONDecodeError:
             return {}
     return {}
+
+
+def _norm_text(s: str) -> str:
+    """全角→半角、去空白、小写。用于匹配键(KG 点查设计 §5.3;原在 parsing.normalizer,
+    迁入此处供查询侧与解析侧共用,避免 kg_client→normalizer 循环导入)。"""
+    out = []
+    for ch in s:
+        code = ord(ch)
+        if code == 0x3000:
+            out.append(" ")
+        elif 0xFF01 <= code <= 0xFF5E:
+            out.append(chr(code - 0xFEE0))
+        else:
+            out.append(ch)
+    return re.sub(r"\s+", "", "".join(out)).lower()
+
+
+def _query_variants(q: str) -> list[str]:
+    """查询词变体集(KG 点查设计 §5.3):基候选按现 match_indicator 顺序
+    原样 → 去括号内容 → 取括号内容;每个基候选再派生归一化/大写形式,整体去重保序。"""
+    bases = [q]
+    no_paren = re.sub(r"[\(（][^)）]*[\)）]", "", q)
+    if no_paren != q:
+        bases.append(no_paren)
+    bases.extend(re.findall(r"[\(（]([^)）]*)[\)）]", q))
+    out: list[str] = []
+    seen: set[str] = set()
+    for b in bases:
+        for v in (_norm_text(b), _norm_text(b).upper()):
+            if v and v not in seen:
+                seen.add(v)
+                out.append(v)
+    return out
+
+
+def _entry_from_row(r: dict) -> IndicatorEntry | None:
+    """单行 → IndicatorEntry;code 缺失返回 None(防脏数据)。"""
+    if not r.get("code"):
+        return None
+    return IndicatorEntry(
+        code=r["code"], name=r["name"], aliases=r.get("aliases") or [],
+        unit=r.get("unit"), unit_conversions=_parse_conversions(r.get("unit_conversions")),
+        category=r.get("category"), description=r.get("description"),
+    )
 
 
 class KGClient:
@@ -191,6 +236,30 @@ class KGClient:
             ctx.departments.extend(d for d in r.get("deps", []) if d)
         ctx.departments = sorted(set(ctx.departments))
         return ctx
+
+    # ---------- 指标按名点查 ----------
+    def find_indicator(self, query: str) -> IndicatorEntry | None:
+        """code/别名点查(KG 点查设计 §5.3):code 原样精确优先;未命中则按
+        变体集逐个反查 Alias 节点,首个命中即返回;全未命中返回 None。"""
+        rows = self._query(
+            "MATCH (i:Indicator {code: $code}) RETURN i.code AS code, i.name AS name, "
+            "i.aliases AS aliases, i.unit AS unit, i.unit_conversions AS unit_conversions, "
+            "i.category AS category, i.description AS description",
+            code=query,
+        )
+        if rows:
+            return _entry_from_row(rows[0])
+        for cand in _query_variants(query):
+            rows = self._query(
+                "MATCH (a:Alias {key: $key})<-[:HAS_ALIAS]-(i:Indicator) "
+                "RETURN i.code AS code, i.name AS name, i.aliases AS aliases, "
+                "i.unit AS unit, i.unit_conversions AS unit_conversions, "
+                "i.category AS category, i.description AS description LIMIT 1",
+                key=cand,
+            )
+            if rows:
+                return _entry_from_row(rows[0])
+        return None
 
     # ---------- 组合模式 ----------
     def patterns_for(self, codes: set[str]) -> list[PatternSpec]:

@@ -35,9 +35,16 @@ class FakeSession:
             key = "clusters"
         elif "DEFAULT_INTERVENTION" in cypher:
             key = "iv"
+        elif "Alias" in cypher:
+            key = "alias"
+        elif "Indicator {code: $code}) RETURN i.code AS code" in cypher:
+            key = "code"
         else:
             key = "all"
-        return FakeCursor(self.records_by_query.get(key, []))
+        records = self.records_by_query.get(key, [])
+        if callable(records):
+            records = records(params)
+        return FakeCursor(records)
 
     def __enter__(self):
         return self
@@ -96,6 +103,7 @@ def test_driver_down_degrades_to_empty(monkeypatch):
     c = _client(Broken(), monkeypatch)
     assert c.list_indicators() == []  # 不抛异常,降级为空
     assert c.indicator_context("GLU").code == "GLU"
+    assert c.find_indicator("GLU") is None  # 降级为空结果,不抛异常
 
 
 def test_range_specs_maps_fields(monkeypatch):
@@ -217,3 +225,51 @@ def test_patterns_for_returns_empty_when_no_rows(monkeypatch):
     c = _client(FakeDriver({}), monkeypatch)
     assert c.patterns_for({"TG"}) == []
     assert c.patterns_for(set()) == []
+
+
+# ---------- 变体生成与 find_indicator(KG 点查设计 §5.3)----------
+def _glu_rec():
+    return FakeRecord({
+        "code": "GLU", "name": "空腹血糖", "aliases": ["血糖", "FBG"],
+        "unit": "mmol/L", "unit_conversions": '{"mg/dL": 0.0555}',
+        "category": "糖代谢", "description": "desc",
+    })
+
+
+def test_query_variants_normalization_and_case():
+    from report_agent.knowledge.kg_client import _query_variants
+
+    assert _query_variants("空腹 血糖") == ["空腹血糖"]          # 去空白
+    assert "GLU" in _query_variants("glu")                     # 大写变体
+    assert "FBG" in _query_variants("ＦＢＧ")                  # 全角→半角+大写
+    # 顺序:原样 → 去括号内容 → 取括号内容
+    v = _query_variants("空腹葡萄糖(空腹血糖)")
+    assert v[:3] == ["空腹葡萄糖(空腹血糖)", "空腹葡萄糖", "空腹血糖"]
+    assert _query_variants("空腹血糖") == ["空腹血糖"]          # 无冗余,去重
+
+
+def test_find_indicator_code_fast_path(monkeypatch):
+    driver = FakeDriver({"code": [_glu_rec()], "alias": []})
+    c = _client(driver, monkeypatch)
+    e = c.find_indicator("GLU")
+    assert e.code == "GLU" and e.name == "空腹血糖" and e.aliases == ["血糖", "FBG"]
+    assert e.unit_conversions == {"mg/dL": 0.0555}
+    # code 命中后不再查 Alias
+    assert not any("Alias" in s.last[0] for s in driver.sessions)
+
+
+def test_find_indicator_tries_variants_in_order(monkeypatch):
+    def alias(params):
+        # 只有第三个候选(括号内容"空腹血糖")命中
+        return [_glu_rec()] if params["key"] == "空腹血糖" else []
+
+    driver = FakeDriver({"code": [], "alias": alias})
+    c = _client(driver, monkeypatch)
+    assert c.find_indicator("空腹葡萄糖(空腹血糖)").code == "GLU"
+    keys = [s.last[1]["key"] for s in driver.sessions if "Alias" in s.last[0]]
+    assert keys == ["空腹葡萄糖(空腹血糖)", "空腹葡萄糖", "空腹血糖"]
+
+
+def test_find_indicator_returns_none_when_no_hits(monkeypatch):
+    c = _client(FakeDriver({"code": [], "alias": []}), monkeypatch)
+    assert c.find_indicator("不存在的指标") is None
