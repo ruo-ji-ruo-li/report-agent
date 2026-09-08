@@ -3,10 +3,7 @@ LLM alias_map 兜底已删除(KG 点查设计 §6.2),每次解析不再向 LLM �
 import re
 
 from report_agent.knowledge.kg_client import IndicatorEntry, _norm_text
-from report_agent.observability import get_logger
 from report_agent.parsing.schemas import NormalizedItem, RawReportItem
-
-log = get_logger(__name__)
 
 
 def _match_keys(entry: IndicatorEntry) -> list[str]:

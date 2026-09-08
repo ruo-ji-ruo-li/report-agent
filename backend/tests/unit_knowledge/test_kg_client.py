@@ -239,7 +239,10 @@ def _glu_rec():
 def test_query_variants_normalization_and_case():
     from report_agent.knowledge.kg_client import _query_variants
 
-    assert _query_variants("空腹 血糖") == ["空腹血糖"]          # 去空白
+    # 原样候选在前(Alias key 种子原样入库,verbatim 回显直中),再去空白归一化
+    assert _query_variants("空腹 血糖") == ["空腹 血糖", "空腹血糖"]
+    assert _query_variants("HbA1c")[0] == "HbA1c"              # 原样第一
+    assert _query_variants("Platelet Count")[0] == "Platelet Count"
     assert "GLU" in _query_variants("glu")                     # 大写变体
     assert "FBG" in _query_variants("ＦＢＧ")                  # 全角→半角+大写
     # 顺序:原样 → 去括号内容 → 取括号内容
@@ -273,3 +276,37 @@ def test_find_indicator_tries_variants_in_order(monkeypatch):
 def test_find_indicator_returns_none_when_no_hits(monkeypatch):
     c = _client(FakeDriver({"code": [], "alias": []}), monkeypatch)
     assert c.find_indicator("不存在的指标") is None
+
+
+def test_find_indicator_falls_back_to_normalized_scan(monkeypatch):
+    # 变体点查全部 miss(hba1c/HBA1C ≠ 种子原样的 "HbA1c")后,归一化兜底扫描
+    # (toLower(replace(key,' ','')) IN $norms)命中 —— 别名原样入库(§5.1),
+    # 大小写/空白差异只能靠 §5.3 兜底扫描兜住
+    def alias(params):
+        if "key" in params:
+            return []  # 逐候选点查全部 miss
+        # 兜底扫描的 cypher 含 "Alias" 也路由到本 bucket,按参数区分
+        return [_glu_rec()] if params["norms"] == ["hba1c"] else []
+
+    driver = FakeDriver({"code": [], "alias": alias})
+    c = _client(driver, monkeypatch)
+    e = c.find_indicator("hba1c")
+    assert e.code == "GLU" and e.name == "空腹血糖"
+    # 确认兜底扫描(带 $norms 参数的 Alias 查询)确实执行过
+    scans = [s.last for s in driver.sessions if "norms" in s.last[1]]
+    assert len(scans) == 1 and scans[0][1]["norms"] == ["hba1c"]
+
+
+def test_find_indicator_verbatim_alias_hits_first_candidate(monkeypatch):
+    # 含空格别名("Platelet Count")原样入库 —— verbatim 回显时首个原样候选
+    # 即命中,只发一次 Alias 点查,无需走到归一化兜底扫描
+    def alias(params):
+        return [_glu_rec()] if params["key"] == "Platelet Count" else []
+
+    driver = FakeDriver({"code": [], "alias": alias})
+    c = _client(driver, monkeypatch)
+    e = c.find_indicator("Platelet Count")
+    assert e.code == "GLU" and e.name == "空腹血糖"
+    alias_calls = [s.last for s in driver.sessions if "Alias" in s.last[0]]
+    assert len(alias_calls) == 1  # 首候选命中即返回
+    assert alias_calls[0][1]["key"] == "Platelet Count"

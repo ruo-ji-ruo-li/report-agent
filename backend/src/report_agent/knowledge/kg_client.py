@@ -112,18 +112,25 @@ def _norm_text(s: str) -> str:
     return re.sub(r"\s+", "", "".join(out)).lower()
 
 
-def _query_variants(q: str) -> list[str]:
-    """查询词变体集(KG 点查设计 §5.3):基候选按现 match_indicator 顺序
-    原样 → 去括号内容 → 取括号内容;每个基候选再派生归一化/大写形式,整体去重保序。"""
+def _variant_bases(q: str) -> list[str]:
+    """基候选(KG 点查设计 §5.3):原样 → 去括号内容 → 取括号内容,
+    与 match_indicator 的候选顺序一致;供变体派生与兜底扫描共用。"""
     bases = [q]
     no_paren = re.sub(r"[\(（][^)）]*[\)）]", "", q)
     if no_paren != q:
         bases.append(no_paren)
     bases.extend(re.findall(r"[\(（]([^)）]*)[\)）]", q))
+    return bases
+
+
+def _query_variants(q: str) -> list[str]:
+    """查询词变体集(KG 点查设计 §5.3):每个基候选派生 原样/归一化/大写 三形式,
+    整体去重保序。原样候选在前 —— Alias.key 按种子原样入库(§5.1),
+    verbatim 回显("HbA1c"/"Platelet Count")无需任何变换即可命中。"""
     out: list[str] = []
     seen: set[str] = set()
-    for b in bases:
-        for v in (_norm_text(b), _norm_text(b).upper()):
+    for b in _variant_bases(q):
+        for v in (b, _norm_text(b), _norm_text(b).upper()):
             if v and v not in seen:
                 seen.add(v)
                 out.append(v)
@@ -234,7 +241,8 @@ class KGClient:
     # ---------- 指标按名点查 ----------
     def find_indicator(self, query: str) -> IndicatorEntry | None:
         """code/别名点查(KG 点查设计 §5.3):code 原样精确优先;未命中则按
-        变体集逐个反查 Alias 节点,首个命中即返回;全未命中返回 None。"""
+        变体集(原样/归一化/大写)逐个反查 Alias 节点;再未命中做一轮归一化
+        兜底扫描(大小写/空白差异);全未命中返回 None。"""
         rows = self._query(
             "MATCH (i:Indicator {code: $code}) RETURN i.code AS code, i.name AS name, "
             "i.aliases AS aliases, i.unit AS unit, i.unit_conversions AS unit_conversions, "
@@ -253,6 +261,20 @@ class KGClient:
             )
             if rows:
                 return _entry_from_row(rows[0])
+        # 兜底:大小写/空白差异(hba1c→HbA1c、platelet count→Platelet Count)。
+        # toLower/replace 不可走索引 → 全扫,但 Alias 节点量小且仅在 miss 路径触发
+        # (KG 点查设计 §5.3 兜底扫描)。
+        norms = sorted({_norm_text(b) for b in _variant_bases(query)})
+        rows = self._query(
+            "MATCH (a:Alias)<-[:HAS_ALIAS]-(i:Indicator) "
+            "WHERE toLower(replace(a.key, ' ', '')) IN $norms "
+            "RETURN i.code AS code, i.name AS name, i.aliases AS aliases, i.unit AS unit, "
+            "i.unit_conversions AS unit_conversions, i.category AS category, "
+            "i.description AS description LIMIT 1",
+            norms=norms,
+        )
+        if rows:
+            return _entry_from_row(rows[0])
         return None
 
     # ---------- 组合模式 ----------

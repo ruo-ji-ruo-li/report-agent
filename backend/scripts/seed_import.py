@@ -48,8 +48,9 @@ CONSTRAINT_STATEMENTS: list[str] = [
 
 
 def ensure_constraints(session) -> None:
-    """幂等创建约束/索引。存量重复节点会导致创建失败 —— 异常上抛,
-    main() 捕获后打印明确错误退出(种子是唯一写方,预期不会发生)。"""
+    """幂等创建约束/索引。存量重复节点会导致创建失败 —— 创建失败异常直接上抛,
+    无捕获打印(main() 只有 try/finally;种子是唯一写方,预期不会发生,
+    真失败会以 traceback + 非零退出码告警)。"""
     for stmt in CONSTRAINT_STATEMENTS:
         session.run(stmt)
 
@@ -125,6 +126,7 @@ def upsert_indicator(session, seed) -> None:
     # 必须 DETACH(plain DELETE 会在节点仍有关系时报错)。
     session.run("MATCH (rs:RangeSpec) WHERE NOT (rs)<--() DELETE rs")
     session.run("MATCH (iv:Intervention) WHERE NOT (iv)<--() DETACH DELETE iv")
+    # Alias 只有 HAS_ALIAS 入边,无出边 → plain DELETE 足够(不需 DETACH)
     session.run("MATCH (a:Alias) WHERE NOT (a)<--() DELETE a")
 
 

@@ -131,12 +131,15 @@ class FakeKG:
         self.patterns = patterns or []
         self.contexts = contexts or {}
         self.range_calls: list[str] = []
+        self.pattern_codes: set[str] | None = None  # 记录 patterns_for 收到的 codes(compare 阶段推导)
 
     def range_specs(self, code):
         self.range_calls.append(code)
         return self.specs.get(code, [])
 
     def patterns_for(self, codes):
+        # 锁定 compare 阶段的 codes 推导(否则测试无法发现推导漂移)
+        self.pattern_codes = set(codes)
         return self.patterns
 
     def indicator_context(self, code):
@@ -401,6 +404,8 @@ def test_compare_stage_reports_matched_patterns():
     report = {"id": "r1", "sex": "male", "age": 40.0}
     ctx = StageContext(task_id="t1", report=report, db=db, deps=deps)
     payload = asyncio.run(compare_stage(ctx))
+    # compare 把有 indicator_code 的判定码集传给 patterns_for(单 GLU 高项 → {"GLU"})
+    assert kg.pattern_codes == {"GLU"}
     assert payload["matched_patterns"] == [("血糖升高模式", ["空腹血糖"])]
     assert payload["n_abnormal"] == 1
 
