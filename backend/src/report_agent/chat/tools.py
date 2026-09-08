@@ -1,5 +1,4 @@
 """4 个受控工具(全部只读)。工具名与 docstring 即 LLM 的工具描述。"""
-from report_agent.parsing.normalizer import match_indicator
 from report_agent.retrieval.hybrid import RetrievalQuery
 
 # 拒答话术(与管线 placeholder 同语义)。sse 层以此文本识别"拒答"并记审计(chat_refusal)。
@@ -31,13 +30,12 @@ def make_tools(deps, report_id: str) -> list[callable]:
 
     async def query_indicator_knowledge(indicator: str) -> str:
         """查询指标的知识图谱事实(含义/升高降低提示/分级建议/科室)。参数为指标名。"""
-        entries = deps.kg.list_indicators()
-        code = match_indicator(indicator, entries)
-        if code is None:
-            cands = [f"{e.name}({e.code})" for e in entries[:20]]
-            return f"未匹配到指标「{indicator}」。候选指标: {'、'.join(cands)}。请换个名称再试。"
-        ctx = deps.kg.indicator_context(code)
-        lines = [f"指标: {ctx.name}({code})"]
+        entry = deps.kg.find_indicator(indicator)
+        if entry is None:
+            # KG 点查设计 §5.4:未命中固定话术,不提供候选(不再全表拉目录)
+            return f"未匹配到指标「{indicator}」。请换个名称再试。"
+        ctx = deps.kg.indicator_context(entry.code)
+        lines = [f"指标: {ctx.name}({entry.code})"]
         if ctx.high_suggests:
             lines.append("升高提示: " + "; ".join(f"{c.name}({c.strength})" for c in ctx.high_suggests))
         if ctx.low_suggests:
@@ -51,10 +49,10 @@ def make_tools(deps, report_id: str) -> list[callable]:
 
     async def compute_reference_range(indicator: str, value: float | None = None) -> str:
         """按本报告受检人的性别/年龄查询标准参考区间,并可对给定数值做判定。"""
-        entries = deps.kg.list_indicators()
-        code = match_indicator(indicator, entries)
-        if code is None:
-            return f"未匹配到指标「{indicator}」。"
+        entry = deps.kg.find_indicator(indicator)
+        if entry is None:
+            return f"未匹配到指标「{indicator}」。请换个名称再试。"
+        code = entry.code
         from report_agent.pipeline.rule_compare import select_range
 
         detail = await db.get_report_detail(report_id)
@@ -80,8 +78,8 @@ def make_tools(deps, report_id: str) -> list[callable]:
     async def search_knowledge(query: str) -> str:
         """检索医学知识库(指标知识图谱+向量+全文)。返回证据摘要与编号;无结果或 RRF 融合
         后 top 证据得分低于配置阈值时必须拒答。"""
-        code = match_indicator(query, deps.kg.list_indicators())
-        q = RetrievalQuery(text=query, indicator_code=code)
+        entry = deps.kg.find_indicator(query)
+        q = RetrievalQuery(text=query, indicator_code=entry.code if entry else None)
         evs = await deps.retriever.search(q)
         # F5: 接线 REFUSAL_RRF_THRESHOLD(spec §6.2 第二层拒答)。Milvus top-k 对任意
         # 查询恒返回 k 条近邻,空结果拒答不够 —— 语料外问题靠本阈值兜底;默认 0.0 不

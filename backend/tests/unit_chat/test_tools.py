@@ -1,7 +1,5 @@
-"""chat 工具单测。brief Step 2 逐字 + 一处最小修正: FakeKG 补 list_indicators()
-(brief 的 query_indicator_knowledge/compute_reference_range/search_knowledge 都经
-match_indicator(indicator, deps.kg.list_indicators()) 取指标目录,FakeKG 缺该方法
-会 AttributeError;实现与 brief 一致,补在测试假件上)。"""
+"""chat 工具单测。FakeKG 提供 find_indicator 内存实现(按 name/aliases 匹配),
+对应三工具点查接线(KG 点查设计 §5.4:不再整表拉目录)。"""
 import asyncio
 
 from report_agent.chat.tools import make_tools
@@ -15,8 +13,9 @@ class FakeKG:
         self.specs = [RangeSpec(sex="any", age_min=18, age_max=100, low=3.9, high=6.1,
                                 critical_low=2.8, critical_high=22.0, unit="mmol/L", source_note=None)]
 
-    def list_indicators(self):
-        return self.entries
+    def find_indicator(self, query):
+        return next((e for e in self.entries
+                     if query in {e.name, *e.aliases}), None)
 
     def indicator_context(self, code):
         return IndicatorContext(code=code, name="空腹血糖")
@@ -58,10 +57,11 @@ def test_compute_reference_range_judges_value():
     assert "升高" in out or "high" in out
 
 
-def test_query_indicator_knowledge_unmatched_returns_candidates():
+def test_query_indicator_knowledge_unmatched_returns_fixed_message():
     tools = {t.__name__: t for t in make_tools(FakeDeps(), "r1")}
     out = asyncio.run(tools["query_indicator_knowledge"](indicator="不存在指标"))
-    assert "候选" in out or "匹配" in out  # 给出候选列表让 agent 澄清
+    # KG 点查设计 §5.4:未命中返回固定话术,不再全表拉目录给候选
+    assert "未匹配到" in out and "候选" not in out
 
 
 def test_search_knowledge_empty_hints_refusal():

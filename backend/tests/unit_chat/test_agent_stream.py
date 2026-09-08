@@ -133,8 +133,9 @@ class _FakeKG:
         self.specs = [RangeSpec(sex="any", age_min=18, age_max=100, low=3.9, high=6.1,
                                 critical_low=2.8, critical_high=22.0, unit="mmol/L", source_note=None)]
 
-    def list_indicators(self):
-        return self.entries
+    def find_indicator(self, query):
+        return next((e for e in self.entries
+                     if query in {e.name, *e.aliases}), None)
 
     def indicator_context(self, code):
         return IndicatorContext(code=code, name="空腹血糖")
