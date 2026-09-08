@@ -28,7 +28,7 @@ class FakeSession:
     def run(self, cypher, **params):
         self.last = (cypher, params)
         # 按 cypher 特征路由到不同记录集,模拟 indicator_context 的多次查询;
-        # 不匹配时回落到 "all"(list_indicators / range_specs 场景)。
+        # 不匹配时回落到 "all"(indicator_catalog / range_specs 场景)。
         if "HIGH_SUGGESTS" in cypher:
             key = "ctx"
         elif "PART_OF" in cypher:
@@ -70,13 +70,13 @@ def _client(driver, monkeypatch):
     return kg_client.KGClient(uri="bolt://x", user="u", password="p", database="neo4j")
 
 
-def test_list_indicators_maps_fields(monkeypatch):
+def test_indicator_catalog_maps_fields(monkeypatch):
     rec = FakeRecord(
         {"code": "GLU", "name": "空腹血糖", "aliases": ["血糖", "FBG"], "unit": "mmol/L",
          "unit_conversions": {"mg/dL": 0.0555}, "category": "糖代谢", "description": "desc"}
     )
     c = _client(FakeDriver({"all": [rec]}), monkeypatch)
-    entries = c.list_indicators()
+    entries = c.indicator_catalog()
     assert len(entries) == 1
     e = entries[0]
     assert e.code == "GLU" and e.aliases == ["血糖", "FBG"]
@@ -101,7 +101,7 @@ def test_driver_down_degrades_to_empty(monkeypatch):
             raise ServiceUnavailable("down")
 
     c = _client(Broken(), monkeypatch)
-    assert c.list_indicators() == []  # 不抛异常,降级为空
+    assert c.indicator_catalog() == []  # 不抛异常,降级为空
     assert c.indicator_context("GLU").code == "GLU"
     assert c.find_indicator("GLU") is None  # 降级为空结果,不抛异常
 

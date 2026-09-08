@@ -30,7 +30,7 @@ async def build_deps(settings) -> PipelineDeps:
     import asyncio
 
     await asyncio.to_thread(store.ensure_collection)
-    entries = await asyncio.to_thread(kg.list_indicators)
+    entries = await asyncio.to_thread(kg.indicator_catalog)
     normalizer = Normalizer(entries)
     retriever = HybridRetriever(milvus=store, kg=kg, embedder=llms.embedding, settings=settings)
     from report_agent.db.session import session_factory

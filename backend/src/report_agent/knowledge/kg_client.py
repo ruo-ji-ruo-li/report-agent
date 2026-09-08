@@ -159,21 +159,15 @@ class KGClient:
             return []
 
     # ---------- 指标词典 ----------
-    def list_indicators(self) -> list[IndicatorEntry]:
+    def indicator_catalog(self) -> list[IndicatorEntry]:
+        """全量指标目录(KG 点查设计 §6.1):仅应用启动构建 Normalizer 调用一次;
+        请求路径禁用 —— 聊天/检索一律走 find_indicator 点查。"""
         rows = self._query(
             "MATCH (i:Indicator) RETURN i.code AS code, i.name AS name, i.aliases AS aliases, "
             "i.unit AS unit, i.unit_conversions AS unit_conversions, "
             "i.category AS category, i.description AS description"
         )
-        return [
-            IndicatorEntry(
-                code=r["code"], name=r["name"], aliases=r.get("aliases") or [],
-                unit=r.get("unit"), unit_conversions=_parse_conversions(r.get("unit_conversions")),
-                category=r.get("category"), description=r.get("description"),
-            )
-            for r in rows
-            if r.get("code")
-        ]
+        return [e for e in (_entry_from_row(r) for r in rows) if e]
 
     # ---------- 参考区间 ----------
     def range_specs(self, code: str) -> list[RangeSpec]:
