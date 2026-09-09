@@ -105,6 +105,57 @@ def llm_case_specs(report_files: list, max_reports: int, real_case) -> list[LLMC
     return specs
 
 
+def qa_fixture_gt3(data: dict) -> tuple[list, list]:
+    """合成报告 QA 镜像(spec §7.4):全部 gt_codes 非 null 的 raw_items(旧口径仅前 3 项,
+    真实数值 QA 不可达 → 改为全量 coded 项;镜像变大只增加工具可见数据,不改判定)。"""
+    coded = [r for r in data["raw_items"] if data["gt_codes"].get(r["name"])]
+    raws = [RawReportItem(**{k: v for k, v in r.items() if k != "section"}) for r in coded]
+    gt3 = [
+        NormalizedItem(
+            raw_index=i, name=r["name"],
+            indicator_code=data["gt_codes"].get(r["name"]),
+            value_text=r.get("value_text"), value_num=r.get("value_num"),
+            unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
+            ref_range_text=r.get("ref_range_text"), range_from="report",
+        )
+        for i, r in enumerate(coded)
+    ]
+    return raws, gt3
+
+
+def qa_fixture_gt(gt) -> tuple[list, list]:
+    """真实 case QA 镜像(spec §7.4):全部 code 非 null 的 gt 项。"""
+    from report_agent.eval.real_case import RealCaseGT
+
+    assert isinstance(gt, RealCaseGT)
+    coded = [it for it in gt.items if it.code]
+    raws = [RawReportItem(name=it.name, value_text=it.value_text, value_num=it.value_num,
+                          unit=it.unit, ref_range_text=it.ref_range_text) for it in coded]
+    gt3 = [
+        NormalizedItem(
+            raw_index=i, name=it.name, indicator_code=it.code,
+            value_text=it.value_text, value_num=it.value_num, unit=it.unit,
+            raw_value_num=it.value_num, raw_unit=it.unit,
+            ref_range_text=it.ref_range_text,
+            range_from="report" if it.ref_range_text else None,
+        )
+        for i, it in enumerate(coded)
+    ]
+    return raws, gt3
+
+
+def qa_fixture_parts(src: dict) -> tuple:
+    """QA fixture 镜像三件套(合成与真实同口径,spec §7.4):(meta, raws, gt3)。"""
+    if "real_gt" in src:
+        gt = src["real_gt"]
+        meta = ReportMeta(sex=gt.meta.get("sex"), age=gt.meta.get("age"))
+        raws, gt3 = qa_fixture_gt(gt)
+        return meta, raws, gt3
+    meta = ReportMeta(sex=src["meta"].get("sex"), age=src["meta"].get("age"))
+    raws, gt3 = qa_fixture_gt3(src)
+    return meta, raws, gt3
+
+
 def run_meta(run_id: str, args: dict, metrics: dict) -> dict:
     """run.json 内容(评测升级 spec §6.1):时间/commit/参数/指标快照。"""
     return {
@@ -343,70 +394,80 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                                             "summary_guardrail": g.verdict.value})
     metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
-    # 5) 拒答 QA(30 条,评审 I-②)—— uuid4 主键下不存在 "eval_fixture" 类 id 的
-    #    可达路径,故开跑时自建 fixture 报告行: 镜像评测集第 1 份报告(eval/reports/
-    #    排序首份,即 qa 作者对题的基准)的前 3 个 raw_items + 同口径 gt 归一化与规则
-    #    判定落库,使 build_chat_agent 的 get_my_report/compute_reference_range 工具
-    #    可查真实数据(数值类 QA 的 must_contain 才可达)。建行失败(无 postgres)则
-    #    跳过本维并显著告警 —— refusal_correct 记 1.0(注明 QA 未跑),不阻断门禁。
+    # 5) 拒答 QA(38 条:30 合成 + 8 真实,评审 I-② + 评测升级 spec §7.4)——
+    #    uuid4 主键下不存在 "eval_fixture" 类 id 的可达路径,故开跑时自建 fixture 报告行:
+    #    每个被 QA 引用的报告(缺省 r01 = 评测集排序首份)各建一份镜像 —— 全部 code 非
+    #    null 的项 + 同口径 gt 归一化与规则判定落库,使 build_chat_agent 的工具可查真实
+    #    数据。建行失败(无 postgres)则跳过本维并显著告警 —— refusal_correct 记 1.0
+    #    (注明 QA 未跑),不阻断门禁。
     from report_agent.chat.agent import build_chat_agent
+    from report_agent.eval.real_case import REAL_CASE_ID
+    from report_agent.eval.tracer import QATraceCallback
 
     qa_correct, qa_total = 0, 0
     if QA_FILE.exists():
-        fixture = json.loads(report_files[0].read_text("utf-8"))
-        fixture_meta = ReportMeta(sex=fixture["meta"].get("sex"),
-                                  age=fixture["meta"].get("age"))
-        qa_report_id = None
+        qa_lines = [json.loads(l) for l in QA_FILE.read_text("utf-8").splitlines() if l.strip()]
+        fixture_srcs: dict = {"r01": json.loads(report_files[0].read_text("utf-8"))}
+        if real_case is not None:
+            fixture_srcs[REAL_CASE_ID] = {"real_gt": real_case[1]}
+        qa_report_ids: dict[str, str] = {}
+        referenced = {qa.get("report", "r01") for qa in qa_lines}
         try:
-            qa_report_id = await deps.db.create_report("manual", None, fixture_meta)
-            raws3 = [RawReportItem(**{k: v for k, v in r.items() if k != "section"})
-                     for r in fixture["raw_items"][:3]]
-            await deps.db.save_raw_items(qa_report_id, raws3)
-            gt3 = []
-            for i, r in enumerate(fixture["raw_items"][:3]):
-                code = fixture["gt_codes"].get(r["name"])
-                gt3.append(NormalizedItem(
-                    raw_index=i, name=r["name"], indicator_code=code,
-                    value_text=r.get("value_text"), value_num=r.get("value_num"),
-                    unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
-                    ref_range_text=r.get("ref_range_text"), range_from="report",
-                ))
-            specs3 = {}
-            for it in gt3:
-                if it.indicator_code and it.indicator_code not in specs3:
-                    specs3[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
-            await deps.db.save_normalized(qa_report_id, gt3)
-            await deps.db.apply_judgments(qa_report_id, judge_all(gt3, specs3, fixture_meta))
+            for key in referenced:
+                src = fixture_srcs.get(key)
+                if src is None:
+                    print(f"[warn] QA 引用未知报告 {key},相关 QA 记失败")
+                    continue
+                meta, raws, gt3 = qa_fixture_parts(src)
+                rid = await deps.db.create_report("manual", None, meta)
+                await deps.db.save_raw_items(rid, raws)
+                specs3 = {}
+                for it in gt3:
+                    if it.indicator_code and it.indicator_code not in specs3:
+                        specs3[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
+                await deps.db.save_normalized(rid, gt3)
+                await deps.db.apply_judgments(rid, judge_all(gt3, specs3, meta))
+                qa_report_ids[key] = rid
         except Exception as e:  # noqa: BLE001 —— 无 postgres 等:QA 维跳过,不阻断门禁
             print(f"[warn] QA 维度跳过(fixture 报告行创建失败,需 postgres 可用): {e}")
-        if qa_report_id is not None:
-            for line in QA_FILE.read_text("utf-8").splitlines():
-                if not line.strip():
-                    continue
-                qa = json.loads(line)
+        if qa_report_ids:
+            for line in qa_lines:
                 qa_total += 1
-                graph = build_chat_agent(deps, qa_report_id)
+                rid = qa_report_ids.get(line.get("report", "r01"))
+                if rid is None:
+                    print(f"[qa-fail] Q={line['question']} 未知报告引用 {line.get('report')}")
+                    continue
+                graph = build_chat_agent(deps, rid)
                 result = await graph.ainvoke(
-                    {"messages": [{"role": "user", "content": qa["question"]}], "tool_rounds": 0}
+                    {"messages": [{"role": "user", "content": line["question"]}], "tool_rounds": 0},
+                    config={"callbacks": [QATraceCallback(sink)]},
                 )
                 answer = result["messages"][-1].content or ""
+                tool_calls = [tc.get("name") for m in result["messages"]
+                              for tc in (getattr(m, "tool_calls", None) or [])]
                 # must_contain 各项支持 "|" 分隔的同义候选,任一命中即过(LLM 措辞
                 # 不可控,如安全引导"就医/医生/线下"出现其一即达标)
                 ok = True
-                for s in qa.get("must_contain", []):
+                for s in line.get("must_contain", []):
                     if not any(alt in answer for alt in s.split("|")):
                         ok = False
-                for s in qa.get("must_not_contain", []):
+                for s in line.get("must_not_contain", []):
                     if s in answer:
                         ok = False
                 if not ok:
-                    misses = [s for s in qa.get("must_contain", [])
+                    misses = [s for s in line.get("must_contain", [])
                               if not any(alt in answer for alt in s.split("|"))]
-                    bads = [s for s in qa.get("must_not_contain", []) if s in answer]
-                    print(f"[qa-fail] Q={qa['question']} missing={misses} "
+                    bads = [s for s in line.get("must_not_contain", []) if s in answer]
+                    print(f"[qa-fail] Q={line['question']} missing={misses} "
                           f"forbidden={bads} answer={answer[:120]}")
                 if ok:
                     qa_correct += 1
+                sink.log_qa({
+                    "question": line["question"], "report": line.get("report", "r01"),
+                    "tool_calls": tool_calls, "answer": answer, "ok": ok,
+                    "misses": misses if not ok else [],
+                    "bads": bads if not ok else [],
+                })
     else:
         print("[warn] 无 eval/qa_pairs.jsonl,拒答维度未实跑(refusal_correct 记 1.0)")
     metrics["refusal_correct"] = round(qa_correct / qa_total, 4) if qa_total else 1.0
