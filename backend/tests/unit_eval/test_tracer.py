@@ -99,3 +99,19 @@ def test_qa_callback_logs_llm_and_tools(tmp_path):
     tools = (tmp_path / "r" / "qa_tools.jsonl").read_text("utf-8").splitlines()
     trecs = [json.loads(l) for l in tools]
     assert trecs[0]["name"] == "get_my_report" and trecs[1]["phase"] == "end"
+
+
+def test_qa_callback_chat_model_start_real_dispatch(tmp_path):
+    """走真实派发路径(评审 T3-Important):chat 模型实际触发的是
+    on_chat_model_start,消息须保真为完整 content,而非拍平后逐字符切分。"""
+    from langchain_core.callbacks.manager import CallbackManager
+    from langchain_core.messages import HumanMessage
+
+    sink = TraceSink(tmp_path, "r")
+    manager = CallbackManager(handlers=[QATraceCallback(sink)])
+    manager.on_chat_model_start({}, [[HumanMessage(content="你好呀")]])
+    recs = [json.loads(l) for l in (tmp_path / "r" / "llm_calls.jsonl")
+            .read_text("utf-8").splitlines()]
+    assert len(recs) == 1 and recs[0]["phase"] == "start"
+    assert isinstance(recs[0]["messages"], list) and len(recs[0]["messages"]) == 1
+    assert recs[0]["messages"][0]["content"] == "你好呀"

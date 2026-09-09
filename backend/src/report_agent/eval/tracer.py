@@ -136,9 +136,21 @@ class QATraceCallback(BaseCallbackHandler):
         return {"role": d.get("type") or d.get("role"), "content": d.get("content"),
                 "tool_calls": d.get("tool_calls")}
 
+    def on_chat_model_start(self, serialized, messages, **kwargs) -> None:
+        # chat 模型(含 ChatOpenAI)真实派发路径:消息为 list[list[BaseMessage]],逐层保真记录
+        for msgs in messages:
+            self._sink.log_llm("qa_agent", [self._fmt_msg(m) for m in msgs], "",
+                               {"phase": "start"})
+
     def on_llm_start(self, serialized, prompts, **kwargs) -> None:
         for p in prompts:
-            self._sink.log_llm("qa_agent", [self._fmt_msg(m) for m in p], "", {"phase": "start"})
+            if isinstance(p, str):
+                # 未实现 on_chat_model_start 时的基类兜底:prompts 为扁平字符串,
+                # 整串作为一条 content 记录,不逐字符切分
+                self._sink.log_llm("qa_agent", [self._fmt_msg(p)], "", {"phase": "start"})
+            else:
+                self._sink.log_llm("qa_agent", [self._fmt_msg(m) for m in p], "",
+                                   {"phase": "start"})
 
     def on_llm_end(self, response, **kwargs) -> None:
         texts = [g[0].text for g in response.generations if g]
