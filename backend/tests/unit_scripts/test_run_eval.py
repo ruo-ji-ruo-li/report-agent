@@ -28,3 +28,13 @@ async def test_run_exits_2_on_empty_reports(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runner, "REPORTS_DIR", tmp_path)
     assert await runner.run(None) == 2
+
+
+def test_run_meta_shape():
+    from report_agent.eval import runner
+
+    meta = runner.run_meta("20260909-120000", {"max_llm_reports": 5}, {"f1": 0.9})
+    assert meta["run_id"] == "20260909-120000"
+    assert meta["git_commit"]  # 非空(git 环境)或 "unknown"
+    assert meta["metrics"] == {"f1": 0.9}
+    assert "finished_at" in meta

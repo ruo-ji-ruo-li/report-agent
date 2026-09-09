@@ -7,13 +7,17 @@ LLM 相关维度只跑 --max-llm-reports(默认 5)份以控制成本;规则维�
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
+
+from report_agent.eval.tracer import TracedLLM, TraceSink
 
 ROOT = Path(__file__).resolve().parents[3]
 REPORTS_DIR = ROOT / "eval" / "reports"
 QA_FILE = ROOT / "eval" / "qa_pairs.jsonl"
 RESULT_FILE = ROOT / "eval" / "result.json"
 BASELINE_FILE = ROOT / "eval" / "baseline.json"
+TRACES_DIR = ROOT / "eval" / "traces"
 
 # 基线回退容差(评测升级 spec §8):LLM 评分维度 judge 噪声大,容差放宽到 0.15;
 # 确定性维度沿用缺省 0.05
@@ -34,6 +38,24 @@ def _git_commit() -> str:
         return "unknown"
 
 
+def _judgment_dict(j) -> dict:
+    """ItemJudgment → JSON 可序列化 dict(Enum status 转 value)。"""
+    d = j.__dict__.copy()
+    d["status"] = d["status"].value
+    return d
+
+
+def run_meta(run_id: str, args: dict, metrics: dict) -> dict:
+    """run.json 内容(评测升级 spec §6.1):时间/commit/参数/指标快照。"""
+    return {
+        "run_id": run_id,
+        "git_commit": _git_commit(),
+        "args": args,
+        "metrics": metrics,
+        "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
 async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) -> int:
     """执行评测,返回退出码: 0 通过 / 1 回退或硬门禁失败 / 2 评测集为空。"""
     from report_agent.eval.metrics import (
@@ -48,6 +70,10 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     f1s, accs = [], []
     evidence_covered = 0
     evidence_total = 0
+
+    run_id = time.strftime("%Y%m%d-%H%M%S")
+    sink = TraceSink(TRACES_DIR, run_id)
+    args_for_trace = {"max_llm_reports": max_llm_reports, "update_baseline": update_baseline}
 
     report_files = sorted(REPORTS_DIR.glob("*.json"))
     # (评审 I-④,brief 偏差: 空评测集时各维度缺省 1.0 会静默 [PASS] 并可冻结全 1.0
@@ -65,6 +91,10 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         pred = [it.indicator_code for it in items]
         gt = [data["gt_codes"].get(r["name"]) for r in data["raw_items"]]
         f1s.append(compute_code_f1(pred, gt))
+        sink.log_case(path.stem, "normalize", {
+            "f1": f1s[-1], "pred": pred, "gt": gt,
+            "normalized": [it.__dict__ for it in items],
+        })
         # 2) 规则层判定准确率(直接喂 gt 归一化,绕过 LLM 波动;必须 1.0)
         gt_items = []
         for i, r in enumerate(data["raw_items"]):
@@ -84,14 +114,20 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         # (brief 偏差,最小修正: gt_codes 为 null 的目录外项规则层必出 "unmapped",
         #  brief 的兜底 "unknown" 使含 unknown 项的报告永远达不到 1.0,与合成模板
         #  每报告含 1 个目录外项的要求自相矛盾 → 无 code 项兜底对齐 "unmapped")
-        accs.append(status_accuracy(
-            [j.status.value for j in judgments],
-            [data["gt_statuses"].get(c, "unmapped" if not c else "unknown") for c in
-             (it.indicator_code or "" for it in gt_items)],
-        ))
+        expected = [
+            data["gt_statuses"].get(c, "unmapped" if not c else "unknown") for c in
+            (it.indicator_code or "" for it in gt_items)
+        ]
+        accs.append(status_accuracy([j.status.value for j in judgments], expected))
+        sink.log_case(path.stem, "rule", {
+            "accuracy": accs[-1],
+            "judgments": [_judgment_dict(j) for j in judgments],
+            "expected": expected,
+        })
         # 3) 证据覆盖率(全量,无 LLM)
         from report_agent.retrieval.hybrid import RetrievalQuery
 
+        ev_stage: dict = {}
         for j in judgments:
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
@@ -100,6 +136,10 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
             if any(e.source != "placeholder" for e in evs):
                 evidence_covered += 1
+            ev_stage[j.name] = [{"source": e.source, "title": e.title, "text": e.text}
+                                for e in evs]
+        if ev_stage:
+            sink.log_case(path.stem, "evidence", {"items": ev_stage})
 
     metrics = {
         "normalize_f1": round(sum(f1s) / len(f1s), 4) if f1s else 1.0,
@@ -116,7 +156,11 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     from report_agent.retrieval.hybrid import RetrievalQuery
 
     numeric_ok, numeric_total = 0, 0
+    # (评测升级 spec §6.2)包装 chat 客户端:解读/总评的 LLM I/O 落 llm_calls.jsonl,
+    # 委托语义不变,零生产代码改动
+    llm_for_eval = TracedLLM(deps.llms.chat, sink, purpose="interpret")
     for path in report_files[:max_llm_reports]:
+        llm_stage: dict = {}
         data = json.loads(path.read_text("utf-8"))
         # (评审 I-①,brief 口径修正: SUSPECT 计败后白名单必须覆盖解读可合法引用的
         #  全部数值 —— 报告值 ∪ 报告区间上下界 ∪ 年龄,对齐 chat/sse.py 的 allowed
@@ -161,7 +205,7 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                     float(x) for x in re.findall(r"\d+(?:\.\d+)?", e.text)
                 )
             kctx = deps.kg.indicator_context(j.indicator_code) if j.indicator_code else None
-            interp = await interpret_item(j, kctx, evs, deps.llms.chat)
+            interp = await interpret_item(j, kctx, evs, llm_for_eval)
             # F1(c): 逐项护栏文本与管线 guardrail_stage 同口径 —— meaning/risks/advice
             # 三槽合并检,risks 不再是"安全零违规"门禁的盲点;复查单 basis 是复查项目
             # 文本(不携报告数值),不纳入本白名单数值检查
@@ -176,7 +220,13 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 metrics["safety_violations"] += 1
             if not numeric_bad:
                 numeric_ok += 1
-        summary = await generate_summary([], [], 0, deps.llms.chat)
+            llm_stage[j.name] = {
+                "status": j.status.value, "interp": interp.__dict__,
+                "evidence": [{"source": e.source, "title": e.title, "text": e.text}
+                             for e in evs],
+                "guardrail": {"verdict": g.verdict.value, "findings": g.findings},
+            }
+        summary = await generate_summary([], [], 0, llm_for_eval)
         numeric_total += 1
         g = rule_guardrail(summary, GuardrailContext(allowed_numbers=allowed))
         safety, numeric_bad = guardrail_violations(g.verdict.value, g.findings)
@@ -184,6 +234,8 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
             metrics["safety_violations"] += 1
         if not numeric_bad:
             numeric_ok += 1
+        sink.log_case(path.stem, "llm", {"items": llm_stage, "summary": summary,
+                                         "summary_guardrail": g.verdict.value})
     metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
     # 5) 拒答 QA(30 条,评审 I-②)—— uuid4 主键下不存在 "eval_fixture" 类 id 的
@@ -253,6 +305,9 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     else:
         print("[warn] 无 eval/qa_pairs.jsonl,拒答维度未实跑(refusal_correct 记 1.0)")
     metrics["refusal_correct"] = round(qa_correct / qa_total, 4) if qa_total else 1.0
+
+    sink.finish(run_meta(run_id, args_for_trace, metrics))
+    TraceSink.prune(TRACES_DIR)
 
     if update_baseline:
         BASELINE_FILE.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), "utf-8")
