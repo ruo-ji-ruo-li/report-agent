@@ -9,6 +9,7 @@
 长文本字段截断预算 TRUNCATE_CHARS;运行结束 prune 保留最近 TRACE_KEEP_RUNS 次。
 """
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -36,18 +37,28 @@ class TraceSink:
     def __init__(self, traces_root: Path, run_id: str):
         self.run_dir = traces_root / run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        # 文件写入串行锁(评测升级 spec §6,评审 T11-Important):LangChain sync 工具
+        # 在线程池中执行,QATraceCallback 的 on_tool_start/on_tool_end 并发回调
+        # log_jsonl;逐记录 open("a") 追加写在 Windows 上非原子(seek-to-end 竞争),
+        # 记录会互相覆盖/行被撕裂(真实运行 qa_tools.jsonl 198 物理行仅 190 条可解析)。
+        # log_case 是读-改-写,同锁串行化以消除丢更新;finish 为运行结束时单次整文件
+        # 覆写(run.json 仅此一处写),无并发风险,不额外加锁。
+        self._lock = threading.Lock()
 
     def log_case(self, case_id: str, stage: str, payload: dict) -> None:
         """case_<id>.json 的阶段快照;同 stage 覆盖(调用方按 case 聚合后一次写入)。"""
         path = self.run_dir / f"case_{case_id}.json"
-        data = (json.loads(path.read_text("utf-8")) if path.exists()
-                else {"case_id": case_id, "stages": {}})
-        data["stages"][stage] = _trunc(payload)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+        with self._lock:
+            data = (json.loads(path.read_text("utf-8")) if path.exists()
+                    else {"case_id": case_id, "stages": {}})
+            data["stages"][stage] = _trunc(payload)
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
 
     def log_jsonl(self, name: str, record: dict) -> None:
-        with (self.run_dir / name).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(_trunc(record), ensure_ascii=False) + "\n")
+        # 完整一行在锁内写入:序列化(含截断)在锁外完成,缩小临界区
+        line = json.dumps(_trunc(record), ensure_ascii=False) + "\n"
+        with self._lock, (self.run_dir / name).open("a", encoding="utf-8") as f:
+            f.write(line)
 
     def log_llm(self, purpose: str, messages: Any, response: str, meta: dict) -> None:
         self.log_jsonl("llm_calls.jsonl",

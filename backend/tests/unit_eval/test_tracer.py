@@ -115,3 +115,31 @@ def test_qa_callback_chat_model_start_real_dispatch(tmp_path):
     assert len(recs) == 1 and recs[0]["phase"] == "start"
     assert isinstance(recs[0]["messages"], list) and len(recs[0]["messages"]) == 1
     assert recs[0]["messages"][0]["content"] == "你好呀"
+
+
+def test_log_jsonl_concurrent_writes_do_not_interleave(tmp_path):
+    """并发写回归(评审 T11-Important):LangChain sync 工具在线程池中执行,
+    QATraceCallback 的 on_tool_start/on_tool_end 会并发触发;log_jsonl 若不加锁,
+    Windows 下逐记录 open("a") 追加写会互相穿插,产生非法 JSON 行(真实运行
+    qa_tools.jsonl 198 物理行仅 190 条可解析)。本测试断言物理行数 = 记录数,
+    且每行均可 json.loads。"""
+    import threading
+
+    sink = TraceSink(tmp_path, "run")
+    n_threads, n_calls = 16, 25
+
+    def worker(tid: int) -> None:
+        for i in range(n_calls):
+            sink.log_jsonl("concurrent.jsonl",
+                           {"i": i, "tid": tid, "payload": "x" * 200})
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    lines = (tmp_path / "run" / "concurrent.jsonl").read_text("utf-8").splitlines()
+    assert len(lines) == n_threads * n_calls
+    recs = [json.loads(line) for line in lines]  # 任一行穿插即 JSONDecodeError
+    assert len(recs) == n_threads * n_calls
