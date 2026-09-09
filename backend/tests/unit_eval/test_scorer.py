@@ -64,3 +64,15 @@ def test_aggregate_skips_none_and_handles_empty():
     assert aggregate_scores(rs) == 0.8
     assert aggregate_scores([]) is None
     assert aggregate_scores([JudgeResult(target="qa", unit_id="1", score=None)]) is None
+
+
+def test_qa_report_items_text_formats_items():
+    from report_agent.eval.runner import qa_report_items_text
+    from report_agent.parsing.schemas import NormalizedItem
+
+    items = [NormalizedItem(raw_index=0, name="甘油三酯", indicator_code="TG",
+                            value_text="3.10", value_num=3.1, unit="mmol/L",
+                            raw_value_num=3.1, raw_unit="mmol/L",
+                            ref_range_text="0.45-1.81", range_from="report")]
+    text = qa_report_items_text(items)
+    assert "甘油三酯" in text and "3.10" in text and "0.45-1.81" in text

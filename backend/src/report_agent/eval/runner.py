@@ -156,6 +156,17 @@ def qa_fixture_parts(src: dict) -> tuple:
     return meta, raws, gt3
 
 
+def qa_report_items_text(gt3: list) -> str:
+    """QA judge 的报告上下文(spec §5.1):每行 名称: 值 (参考区间 x)。"""
+    lines = []
+    for it in gt3:
+        v = it.value_text if it.value_text is not None else (
+            str(it.value_num) if it.value_num is not None else "-")
+        ref = f"(参考区间 {it.ref_range_text})" if it.ref_range_text else ""
+        lines.append(f"- {it.name}: {v} {ref}".strip())
+    return "\n".join(lines) or "(无)"
+
+
 def run_meta(run_id: str, args: dict, metrics: dict) -> dict:
     """run.json 内容(评测升级 spec §6.1):时间/commit/参数/指标快照。"""
     return {
@@ -324,10 +335,16 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         "numeric_consistency": 1.0,
         "safety_violations": 0,
         "refusal_correct": 1.0,
+        # LLM 评分键(评测升级 spec §5.2):评分在 §4/§5 循环中产生,本字面量先于
+        # 循环构造 → 此处占位,循环结束后回填聚合值(全量降级时为 null)
+        "llm_interpretation_score": None,
+        "llm_qa_score": None,
+        "llm_evidence_score": None,
         "parse_f1": metrics_parse_f1 if real_case is not None else None,
     }
 
     # 4) LLM 维度(数值一致性/安全)——成本控制,只跑前 N 份
+    from report_agent.eval.scorer import judge_evidence, judge_interpretation
     from report_agent.guardrails.rules import GuardrailContext, item_guardrail_text, rule_guardrail
     from report_agent.pipeline.interpret import generate_summary, interpret_item
     from report_agent.retrieval.hybrid import RetrievalQuery
@@ -336,6 +353,9 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     # (评测升级 spec §6.2)包装 chat 客户端:解读/总评的 LLM I/O 落 llm_calls.jsonl,
     # 委托语义不变,零生产代码改动
     llm_for_eval = TracedLLM(deps.llms.chat, sink, purpose="interpret")
+    judge_llm = TracedLLM(deps.llms.chat, sink, purpose="judge")
+    judge_interp_results: list = []
+    judge_evidence_results: list = []
     for spec in llm_case_specs(report_files, max_llm_reports, real_case):
         llm_stage: dict = {}
         # (评审 I-①,brief 口径修正: SUSPECT 计败后白名单必须覆盖解读可合法引用的
@@ -382,6 +402,24 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                              for e in evs],
                 "guardrail": {"verdict": g.verdict.value, "findings": g.findings},
             }
+            # LLM 评分(评测升级 spec §5):解读质量 + 证据质量;judge 结果进 trace
+            jr = await judge_interpretation(
+                judge_llm, j.name, j.status.value, interp.value_text,
+                [e.text for e in evs], text)
+            judge_interp_results.append(jr)
+            sink.log_judge({"unit_id": jr.unit_id, "target": jr.target,
+                            "score": jr.score, "criteria": jr.criteria,
+                            "rationale": jr.rationale, "issues": jr.issues,
+                            "error": jr.error, "case_id": spec.case_id})
+            er = await judge_evidence(judge_llm, j.name, j.status.value,
+                                      [e.text for e in evs])
+            judge_evidence_results.append(er)
+            sink.log_judge({"unit_id": er.unit_id, "target": er.target,
+                            "score": er.score, "criteria": er.criteria,
+                            "rationale": er.rationale, "issues": er.issues,
+                            "error": er.error, "case_id": spec.case_id})
+            llm_stage[j.name]["judge"] = {"interpretation_score": jr.score,
+                                          "evidence_score": er.score}
         summary = await generate_summary([], [], 0, llm_for_eval)
         numeric_total += 1
         g = rule_guardrail(summary, GuardrailContext(allowed_numbers=allowed))
@@ -390,8 +428,15 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
             metrics["safety_violations"] += 1
         if not numeric_bad:
             numeric_ok += 1
+        sr = await judge_interpretation(
+            judge_llm, f"{spec.case_id}:总评", "", "", [], summary)
+        judge_interp_results.append(sr)
+        sink.log_judge({"unit_id": sr.unit_id, "target": sr.target, "score": sr.score,
+                        "criteria": sr.criteria, "rationale": sr.rationale,
+                        "issues": sr.issues, "error": sr.error, "case_id": spec.case_id})
         sink.log_case(spec.case_id, "llm", {"items": llm_stage, "summary": summary,
-                                            "summary_guardrail": g.verdict.value})
+                                            "summary_guardrail": g.verdict.value,
+                                            "judge_summary_score": sr.score})
     metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
     # 5) 拒答 QA(38 条:30 合成 + 8 真实,评审 I-② + 评测升级 spec §7.4)——
@@ -402,15 +447,18 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     #    (注明 QA 未跑),不阻断门禁。
     from report_agent.chat.agent import build_chat_agent
     from report_agent.eval.real_case import REAL_CASE_ID
+    from report_agent.eval.scorer import aggregate_scores, judge_qa
     from report_agent.eval.tracer import QATraceCallback
 
     qa_correct, qa_total = 0, 0
+    judge_qa_results: list = []
     if QA_FILE.exists():
         qa_lines = [json.loads(l) for l in QA_FILE.read_text("utf-8").splitlines() if l.strip()]
         fixture_srcs: dict = {"r01": json.loads(report_files[0].read_text("utf-8"))}
         if real_case is not None:
             fixture_srcs[REAL_CASE_ID] = {"real_gt": real_case[1]}
         qa_report_ids: dict[str, str] = {}
+        qa_report_items: dict[str, str] = {}
         referenced = {qa.get("report", "r01") for qa in qa_lines}
         try:
             for key in referenced:
@@ -428,6 +476,7 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 await deps.db.save_normalized(rid, gt3)
                 await deps.db.apply_judgments(rid, judge_all(gt3, specs3, meta))
                 qa_report_ids[key] = rid
+                qa_report_items[key] = qa_report_items_text(gt3)
         except Exception as e:  # noqa: BLE001 —— 无 postgres 等:QA 维跳过,不阻断门禁
             print(f"[warn] QA 维度跳过(fixture 报告行创建失败,需 postgres 可用): {e}")
         if qa_report_ids:
@@ -468,9 +517,20 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                     "misses": misses if not ok else [],
                     "bads": bads if not ok else [],
                 })
+                qr = await judge_qa(judge_llm, line["question"], answer,
+                                    qa_report_items.get(line.get("report", "r01"), ""))
+                judge_qa_results.append(qr)
+                sink.log_judge({"unit_id": qr.unit_id, "target": qr.target,
+                                "score": qr.score, "criteria": qr.criteria,
+                                "rationale": qr.rationale, "issues": qr.issues,
+                                "error": qr.error, "report": line.get("report", "r01")})
     else:
         print("[warn] 无 eval/qa_pairs.jsonl,拒答维度未实跑(refusal_correct 记 1.0)")
     metrics["refusal_correct"] = round(qa_correct / qa_total, 4) if qa_total else 1.0
+    # 评测升级 spec §5.2:LLM 评分聚合回填(解读+总评 / 问答 / 证据;全量降级 → None)
+    metrics["llm_interpretation_score"] = aggregate_scores(judge_interp_results)
+    metrics["llm_qa_score"] = aggregate_scores(judge_qa_results)
+    metrics["llm_evidence_score"] = aggregate_scores(judge_evidence_results)
 
     sink.finish(run_meta(run_id, args_for_trace, metrics))
     TraceSink.prune(TRACES_DIR)
