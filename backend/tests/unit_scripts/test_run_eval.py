@@ -1,9 +1,6 @@
 """run_eval.py CLI 与 runner 入口单测(不连库、不跑全量)。"""
 import importlib.util
-import sys
 from pathlib import Path
-
-import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 _RUN_EVAL = BACKEND_ROOT / "scripts" / "run_eval.py"
