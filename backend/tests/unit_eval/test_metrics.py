@@ -17,3 +17,11 @@ def test_compare_baseline_per_key_tolerance():
                             {"llm_interpretation_score": 0.8}, tolerances) == \
         ["llm_interpretation_score"]
     assert compare_baseline({"f1": 0.9}, {"f1": 0.95}, tolerances) == []
+
+
+def test_compare_baseline_skips_none_current_value():
+    """LLM 评分全量降级时 current 侧为 None(JSON null):必须跳过比较而非抛 TypeError。
+    评测升级 spec §8:LLM 评分全量降级时 new key 为 None,基线比较必须跳过。
+    """
+    assert compare_baseline({"llm_interpretation_score": None},
+                            {"llm_interpretation_score": 0.8}) == []
