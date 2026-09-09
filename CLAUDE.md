@@ -55,6 +55,7 @@ uv run python scripts/smoke.py
 uv run python scripts/gen_eval_reports.py --count 20   # synthesize eval set (gt needs human review)
 uv run python scripts/run_eval.py                       # exit 1 = regression, exit 2 = empty eval set
 uv run python scripts/run_eval.py --update-baseline     # freeze baseline after human confirmation
+uv run python scripts/dry_run_real.py   # 真实 case 解析/归一化对照表(评测升级 spec V2/V3)
 ```
 
 Notes:
