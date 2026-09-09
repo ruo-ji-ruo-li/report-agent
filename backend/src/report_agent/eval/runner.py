@@ -8,9 +8,12 @@ import json
 import re
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from report_agent.eval.tracer import TracedLLM, TraceSink
+from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
+from report_agent.pipeline.rule_compare import judge_all, parse_range_text
 
 ROOT = Path(__file__).resolve().parents[3]
 REPORTS_DIR = ROOT / "eval" / "reports"
@@ -18,6 +21,7 @@ QA_FILE = ROOT / "eval" / "qa_pairs.jsonl"
 RESULT_FILE = ROOT / "eval" / "result.json"
 BASELINE_FILE = ROOT / "eval" / "baseline.json"
 TRACES_DIR = ROOT / "eval" / "traces"
+REAL_DIR = ROOT / "eval" / "real"
 
 # 基线回退容差(评测升级 spec §8):LLM 评分维度 judge 噪声大,容差放宽到 0.15;
 # 确定性维度沿用缺省 0.05
@@ -45,6 +49,62 @@ def _judgment_dict(j) -> dict:
     return d
 
 
+@dataclass
+class LLMCaseSpec:
+    """LLM 维度(4)的统一 case 口径(评测升级 spec §4):合成与真实同构。"""
+    case_id: str
+    raw_items: list  # 白名单数值来源(合成=fixture raw_items;真实=gt 项)
+    gt_items: list   # 判定输入(gt 口径 NormalizedItem)
+    meta: object     # ReportMeta
+
+
+def allowed_numbers_from(gt_items, meta) -> list[float]:
+    """护栏数值白名单(评审 I-① 口径):报告值 ∪ 报告区间上下界 ∪ 年龄。"""
+    allowed: list[float] = []
+    for it in gt_items:
+        if it.value_num is not None:
+            allowed.append(it.value_num)
+        lo, hi = parse_range_text(it.ref_range_text)
+        if lo is not None:
+            allowed.append(lo)
+        if hi is not None:
+            allowed.append(hi)
+    if getattr(meta, "age", None) is not None:
+        allowed.append(float(meta.age))
+    return allowed
+
+
+def llm_case_specs(report_files: list, max_reports: int, real_case) -> list[LLMCaseSpec]:
+    """LLM 维度 case 清单:合成前 max_reports 份 + 真实 case 恒定纳入(spec §4)。
+    真实 case 仅 3 个异常项 + 1 总评,成本增量可忽略,不占 max_reports 名额。"""
+    from report_agent.eval.real_case import REAL_CASE_ID, gt_to_normalized
+
+    specs: list[LLMCaseSpec] = []
+    for path in report_files[:max_reports]:
+        data = json.loads(path.read_text("utf-8"))
+        raws = [RawReportItem(**{k: v for k, v in r.items() if k != "section"})
+                for r in data["raw_items"]]
+        gt_items = [
+            NormalizedItem(
+                raw_index=i, name=r["name"],
+                indicator_code=data["gt_codes"].get(r["name"]),
+                value_text=r.get("value_text"), value_num=r.get("value_num"),
+                unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
+                ref_range_text=r.get("ref_range_text"), range_from="report",
+            )
+            for i, r in enumerate(data["raw_items"])
+        ]
+        specs.append(LLMCaseSpec(case_id=path.stem, raw_items=raws, gt_items=gt_items,
+                                 meta=ReportMeta(sex=data["meta"]["sex"],
+                                                 age=data["meta"]["age"])))
+    if real_case is not None:
+        _md, gt = real_case
+        gt_items = gt_to_normalized(gt)
+        specs.append(LLMCaseSpec(case_id=REAL_CASE_ID, raw_items=gt_items, gt_items=gt_items,
+                                 meta=ReportMeta(sex=gt.meta.get("sex"), age=gt.meta.get("age"))))
+    return specs
+
+
 def run_meta(run_id: str, args: dict, metrics: dict) -> dict:
     """run.json 内容(评测升级 spec §6.1):时间/commit/参数/指标快照。"""
     return {
@@ -64,8 +124,17 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         guardrail_violations,
         status_accuracy,
     )
-    from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
-    from report_agent.pipeline.rule_compare import judge_all, parse_range_text
+    from report_agent.eval.real_case import (
+        REAL_CASE_ID,
+        align_parsed,
+        compute_parse_f1,
+        gt_statuses,
+        gt_to_normalized,
+        load_real_case,
+        normalized_pair_codes,
+    )
+
+    real_case = load_real_case(REAL_DIR)
 
     f1s, accs = [], []
     evidence_covered = 0
@@ -141,6 +210,62 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         if ev_stage:
             sink.log_case(path.stem, "evidence", {"items": ev_stage})
 
+    # 0) 真实 case(评测升级 spec §7):解析维度 + 归一化/规则/证据并入
+    if real_case is not None:
+        from report_agent.parsing.table_extractor import parse_merged_tables
+
+        md, gt = real_case
+        parsed, failed_htmls = parse_merged_tables(md)
+        align = align_parsed(parsed, gt.items)
+        metrics_parse_f1 = compute_parse_f1(align)
+        sink.log_case(REAL_CASE_ID, "parse", {
+            "n_parsed": len(parsed), "n_gt": len(gt.items),
+            "n_failed_tables": len(failed_htmls), "matched": len(align.pairs),
+            "parse_f1": metrics_parse_f1,
+            "unmatched_parsed": [p.__dict__ for p in align.unmatched_parsed],
+            "unmatched_gt": [g.__dict__ for g in align.unmatched_gt],
+        })
+        # 1') 归一化 F1(真实 case):解析产物 → 归一化,与 gt 按 name 对齐(spec §4)
+        norms = await deps.normalizer.normalize(parsed)
+        norm_by_name = {n.name: n for n in norms}
+        pred_real, gt_codes_real = normalized_pair_codes(align, norm_by_name)
+        f1s.append(compute_code_f1(pred_real, gt_codes_real))
+        sink.log_case(REAL_CASE_ID, "normalize", {
+            "f1": f1s[-1], "pred": pred_real, "gt": gt_codes_real,
+            "normalized": [n.__dict__ for n in norms],
+        })
+        # 2') 规则层(真实 case):gt 口径,与合成 case 同(spec §7.2)
+        gt_items = gt_to_normalized(gt)
+        specs = {}
+        for it in gt_items:
+            if it.indicator_code and it.indicator_code not in specs:
+                specs[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
+        rmeta = ReportMeta(sex=gt.meta.get("sex"), age=gt.meta.get("age"))
+        judgments = judge_all(gt_items, specs, rmeta)
+        status_map = gt_statuses(gt)
+        expected = [status_map.get(it.indicator_code, "unmapped" if not it.indicator_code else "unknown")
+                    for it in gt_items]
+        accs.append(status_accuracy([j.status.value for j in judgments], expected))
+        sink.log_case(REAL_CASE_ID, "rule", {
+            "accuracy": accs[-1],
+            "judgments": [_judgment_dict(j) for j in judgments],
+            "expected": expected,
+        })
+        # 3') 证据覆盖率(真实 case)
+        ev_stage: dict = {}
+        for j in judgments:
+            if j.status.value not in ("high", "low", "critical_high", "critical_low"):
+                continue
+            evidence_total += 1
+            evs = await deps.retriever.search(RetrievalQuery(
+                text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
+            if any(e.source != "placeholder" for e in evs):
+                evidence_covered += 1
+            ev_stage[j.name] = [{"source": e.source, "title": e.title, "text": e.text}
+                                for e in evs]
+        if ev_stage:
+            sink.log_case(REAL_CASE_ID, "evidence", {"items": ev_stage})
+
     metrics = {
         "normalize_f1": round(sum(f1s) / len(f1s), 4) if f1s else 1.0,
         "rule_accuracy": round(sum(accs) / len(accs), 4) if accs else 1.0,
@@ -148,6 +273,7 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         "numeric_consistency": 1.0,
         "safety_violations": 0,
         "refusal_correct": 1.0,
+        "parse_f1": metrics_parse_f1 if real_case is not None else None,
     }
 
     # 4) LLM 维度(数值一致性/安全)——成本控制,只跑前 N 份
@@ -159,40 +285,19 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     # (评测升级 spec §6.2)包装 chat 客户端:解读/总评的 LLM I/O 落 llm_calls.jsonl,
     # 委托语义不变,零生产代码改动
     llm_for_eval = TracedLLM(deps.llms.chat, sink, purpose="interpret")
-    for path in report_files[:max_llm_reports]:
+    for spec in llm_case_specs(report_files, max_llm_reports, real_case):
         llm_stage: dict = {}
-        data = json.loads(path.read_text("utf-8"))
         # (评审 I-①,brief 口径修正: SUSPECT 计败后白名单必须覆盖解读可合法引用的
         #  全部数值 —— 报告值 ∪ 报告区间上下界 ∪ 年龄,对齐 chat/sse.py 的 allowed
         #  语义;否则正常引用"参考区间 3.9~6.1"即误报)
-        allowed: list[float] = []
-        for r in data["raw_items"]:
-            if r.get("value_num") is not None:
-                allowed.append(r["value_num"])
-            lo, hi = parse_range_text(r.get("ref_range_text"))
-            if lo is not None:
-                allowed.append(lo)
-            if hi is not None:
-                allowed.append(hi)
-        if data["meta"].get("age") is not None:
-            allowed.append(float(data["meta"]["age"]))
-        # 复用第 2 步的 gt 归一化口径生成判定
-        gt_items = [
-            NormalizedItem(
-                raw_index=i, name=r["name"],
-                indicator_code=data["gt_codes"].get(r["name"]),
-                value_text=r.get("value_text"), value_num=r.get("value_num"),
-                unit=r.get("unit"), raw_value_num=r.get("value_num"), raw_unit=r.get("unit"),
-                ref_range_text=r.get("ref_range_text"), range_from="report",
-            )
-            for i, r in enumerate(data["raw_items"])
-        ]
+        allowed = allowed_numbers_from(spec.raw_items, spec.meta)
+        # 复用 gt 归一化口径生成判定(合成/真实同构,spec §4)
+        gt_items = spec.gt_items
         specs = {}
         for it in gt_items:
             if it.indicator_code and it.indicator_code not in specs:
                 specs[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
-        judgments = judge_all(gt_items, specs, ReportMeta(sex=data["meta"]["sex"],
-                                                          age=data["meta"]["age"]))
+        judgments = judge_all(gt_items, specs, spec.meta)
         for j in judgments:
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
@@ -234,8 +339,8 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
             metrics["safety_violations"] += 1
         if not numeric_bad:
             numeric_ok += 1
-        sink.log_case(path.stem, "llm", {"items": llm_stage, "summary": summary,
-                                         "summary_guardrail": g.verdict.value})
+        sink.log_case(spec.case_id, "llm", {"items": llm_stage, "summary": summary,
+                                            "summary_guardrail": g.verdict.value})
     metrics["numeric_consistency"] = numeric_ok / numeric_total if numeric_total else 1.0
 
     # 5) 拒答 QA(30 条,评审 I-②)—— uuid4 主键下不存在 "eval_fixture" 类 id 的

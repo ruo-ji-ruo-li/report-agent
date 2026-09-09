@@ -75,3 +75,39 @@ def test_normalized_pair_codes_aligns_codes():
                                           ref_range_text="9—50", range_from="report")}
     pred, gt_codes = normalized_pair_codes(align, norm_by_name)
     assert pred == ["ALT"] and gt_codes == ["ALT"]
+
+
+def test_llm_case_specs_includes_real_case(tmp_path):
+    """LLM 维度 case 清单:合成前 N 份 + 真实 case(spec §4:真实 case 恒定纳入)。"""
+    import json as _json
+
+    from report_agent.eval.runner import llm_case_specs
+    from report_agent.parsing.schemas import ReportMeta
+
+    r01 = tmp_path / "r01.json"
+    r01.write_text(_json.dumps({
+        "meta": {"sex": "male", "age": 45},
+        "raw_items": [{"name": "空腹血糖", "value_text": "13.8", "value_num": 13.8,
+                       "unit": "mmol/L", "ref_range_text": "3.9~6.1"}],
+        "gt_codes": {"空腹血糖": "GLU"},
+        "gt_statuses": {"GLU": "high"},
+    }, ensure_ascii=False), encoding="utf-8")
+    real = (r01.read_text(encoding="utf-8"), RealCaseGT(
+        meta={"sex": "male", "age": None},
+        items=[_mk_gt("甘油三酯", "TG", "high")]))
+    specs = llm_case_specs([r01], 5, real)
+    assert [s.case_id for s in specs] == ["r01", "r_real"]
+    assert specs[1].meta == ReportMeta(sex="male", age=None)
+    assert specs[1].gt_items[0].indicator_code == "TG"
+
+
+def test_allowed_numbers_from_gt_items():
+    from report_agent.eval.runner import allowed_numbers_from
+    from report_agent.parsing.schemas import NormalizedItem, ReportMeta
+
+    items = [NormalizedItem(raw_index=0, name="ALT", indicator_code="ALT",
+                            value_text="52", value_num=52.0, unit="U/L",
+                            raw_value_num=52.0, raw_unit="U/L",
+                            ref_range_text="9—50", range_from="report")]
+    allowed = allowed_numbers_from(items, ReportMeta(sex="male", age=40))
+    assert allowed == [52.0, 9.0, 50.0, 40.0]
