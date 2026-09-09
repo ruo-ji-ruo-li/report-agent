@@ -17,13 +17,14 @@
 
 ### 后端
 
-> 冒烟与评测命令依赖真实基础设施(docker compose 服务)与 LLM key,请在具备条件的机器上执行;
+> 冒烟与评测命令依赖真实基础设施(docker compose 服务 + 本地 Milvus standalone)与 LLM key,请在具备条件的机器上执行;
 > 纯代码验证以 `uv run pytest` 与 `uv run ruff check src tests scripts` 为准。
 
 ```bash
 cd backend
 cp .env.example .env          # 填入 DEEPSEEK_API_KEY / EMBEDDING_API_KEY
-docker compose up -d          # postgres + neo4j + milvus(含 milvus 依赖 etcd + minio)
+docker compose up -d          # postgres + neo4j
+docker start milvus-standalone # Milvus 不在 compose 里:本地 standalone 容器(内嵌 etcd + local storage,localhost:19530)
 uv sync
 uv run alembic upgrade head
 uv run python scripts/seed_draft.py --all      # LLM 起草种子(人工校对 YAML 后入库)

@@ -27,8 +27,12 @@ Docs(**注意:`docs/` 在 .gitignore 中,不入 git 仓库,只保留本地文件
 Run all of these from `backend/`.
 
 ```bash
-# infra (postgres / neo4j / milvus+etcd+minio)
+# infra (postgres / neo4j)
 docker compose up -d
+
+# Milvus is NOT in compose — it runs as a separate local standalone container
+# (milvusdb/milvus:v3.0.0, embedded etcd + local storage, localhost:19530):
+docker start milvus-standalone
 
 # setup
 cp .env.example .env        # fill DEEPSEEK_API_KEY and EMBEDDING_API_KEY
@@ -59,7 +63,7 @@ uv run python scripts/dry_run_real.py   # 真实 case 解析/归一化对照表(
 ```
 
 Notes:
-- Unit tests run without infra; `tests/conftest.py` adds `backend/src` to `sys.path` and stubs external-service health checks. `smoke.py` / `run_eval.py` / seed scripts need docker compose + LLM keys.
+- Unit tests run without infra; `tests/conftest.py` adds `backend/src` to `sys.path` and stubs external-service health checks. `smoke.py` / `run_eval.py` / seed scripts need infra (compose services + the standalone Milvus container) + LLM keys.
 - `run_eval.py` is a hard gate: rule-layer accuracy must be 1.0, safety violations zero, metrics must not regress against `eval/baseline.json`.
 - Alembic ignores `alembic.ini`'s URL — `alembic/env.py` overrides it with `POSTGRES_DSN` from settings.
 - New config fields: declare in `report_agent.config.Settings` **and** mirror in `.env.example` (fields correspond 1:1).
