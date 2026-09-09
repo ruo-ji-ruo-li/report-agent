@@ -137,7 +137,9 @@ def qa_fixture_gt(gt) -> tuple[list, list]:
             value_text=it.value_text, value_num=it.value_num, unit=it.unit,
             raw_value_num=it.value_num, raw_unit=it.unit,
             ref_range_text=it.ref_range_text,
-            range_from="report" if it.ref_range_text else None,
+            # (最终评审加固:与 gt_to_normalized/qa_fixture_gt3 对齐为无条件 "report";
+            #  规则层不消费该字段,仅溯源元数据)
+            range_from="report",
         )
         for i, it in enumerate(coded)
     ]
@@ -203,7 +205,6 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     evidence_total = 0
 
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    sink = TraceSink(TRACES_DIR, run_id)
     args_for_trace = {"max_llm_reports": max_llm_reports, "update_baseline": update_baseline}
 
     report_files = sorted(REPORTS_DIR.glob("*.json"))
@@ -212,6 +213,9 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     if not report_files:
         print(f"[FAIL] 评测集为空: {REPORTS_DIR} 下没有评测报告,禁止评测与冻结基线")
         return 2
+    # (最终评审加固:TraceSink 构造在空集检查之后 —— 否则 exit 2 也会在 traces/ 下
+    #  留下空 run 目录;run_id 已在前面生成,不受影响)
+    sink = TraceSink(TRACES_DIR, run_id)
     for path in report_files:
         data = json.loads(path.read_text("utf-8"))
         # fixture raw_items 仍带 "section" 键(section 已从 schema 删除,消费方剥离)
@@ -460,12 +464,14 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         qa_report_ids: dict[str, str] = {}
         qa_report_items: dict[str, str] = {}
         referenced = {qa.get("report", "r01") for qa in qa_lines}
-        try:
-            for key in referenced:
-                src = fixture_srcs.get(key)
-                if src is None:
-                    print(f"[warn] QA 引用未知报告 {key},相关 QA 记失败")
-                    continue
+        for key in referenced:
+            src = fixture_srcs.get(key)
+            if src is None:
+                print(f"[warn] QA 引用未知报告 {key},相关 QA 记失败")
+                continue
+            # (最终评审加固:每个 report key 单独 try —— 整段共用一个 try 时,单次 DB
+            #  抖动会把另一个 key 的 QA 全记失败,造成假门禁失败;单 key 失败仅告警继续)
+            try:
                 meta, raws, gt3 = qa_fixture_parts(src)
                 rid = await deps.db.create_report("manual", None, meta)
                 await deps.db.save_raw_items(rid, raws)
@@ -477,8 +483,11 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 await deps.db.apply_judgments(rid, judge_all(gt3, specs3, meta))
                 qa_report_ids[key] = rid
                 qa_report_items[key] = qa_report_items_text(gt3)
-        except Exception as e:  # noqa: BLE001 —— 无 postgres 等:QA 维跳过,不阻断门禁
-            print(f"[warn] QA 维度跳过(fixture 报告行创建失败,需 postgres 可用): {e}")
+            except Exception as e:  # noqa: BLE001 —— 无 postgres 等:该 key QA 记失败,不阻断门禁
+                print(f"[warn] QA fixture 报告行创建失败 {key}: {e}")
+        if not qa_report_ids:
+            # 全部 key 失败(典型:无 postgres)→ QA 维跳过,refusal_correct 记 1.0(未实跑)
+            print("[warn] QA 维度跳过(fixture 报告行全部创建失败,需 postgres 可用)")
         if qa_report_ids:
             for line in qa_lines:
                 qa_total += 1
@@ -497,6 +506,7 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 # must_contain 各项支持 "|" 分隔的同义候选,任一命中即过(LLM 措辞
                 # 不可控,如安全引导"就医/医生/线下"出现其一即达标)
                 ok = True
+                misses, bads = [], []
                 for s in line.get("must_contain", []):
                     if not any(alt in answer for alt in s.split("|")):
                         ok = False

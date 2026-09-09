@@ -38,7 +38,7 @@ MEDICAL EXAMINATION REPORT
 <div style="text-align: center;"><img src="https://pplines-online.bj.bcebos.com/deploy/official/paddleocr/pp-ocr-vl-16-online//47aee8d6-f33c-45f8-a924-520c3df9863a/markdown_0/imgs/img_in_image_box_689_1160_907_1209.jpg?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-09-06T08%3A03%3A34Z%2F-1%2F%2F3736a3e22be742002733aceeddb2efb16ce82c0d21d6ab5db809cdd5620d4282" alt="Image" width="18%" /></div>
 
 
-爱康杭州西溪天堂旗舰中心分院
+示例体检中心分院
 
 检查日期2026.07.16
 
@@ -49,16 +49,16 @@ MEDICAL EXAMINATION REPORT
 
 360°健康全管
 
-爱康集团是中国领先的以人工智能驱动的、基于医疗大数据云端服务的数字化健康管理平台。通过旗下多个品牌，为团体客户和家庭、个人提供高品质的健康体检、疾病检测、齿科服务、私人医生、职场医疗、疫苗接种、抗衰老、康复医疗等健康管理与医疗服务。通过爱康智汇康云IaaS开放平台，赋能第三方体检与医疗机构，建立起辐射全国主要城市的服务网络，打造“医疗实体+智能云端”的立体化健康管理服务体系。截至2025年7月，爱康集团已在54大城市设有173家体检、齿科与医疗中心。同时，
+示例健康集团是中国领先的以人工智能驱动的、基于医疗大数据云端服务的数字化健康管理平台。通过旗下多个品牌，为团体客户和家庭、个人提供高品质的健康体检、疾病检测、齿科服务、私人医生、职场医疗、疫苗接种、抗衰老、康复医疗等健康管理与医疗服务。通过示例智汇康云IaaS开放平台，赋能第三方体检与医疗机构，建立起辐射全国主要城市的服务网络，打造“医疗实体+智能云端”的立体化健康管理服务体系。截至2025年7月，示例健康集团已在54大城市设有173家体检、齿科与医疗中心。同时，
 
-爱康国宾健康体检管理集团有限公司 版权所有
+示例健康体检管理集团有限公司 版权所有
 
 <div style="text-align: center;"><img src="https://pplines-online.bj.bcebos.com/deploy/official/paddleocr/pp-ocr-vl-16-online//47aee8d6-f33c-45f8-a924-520c3df9863a/markdown_0/imgs/img_in_image_box_978_1406_1066_1492.jpg?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-09-06T08%3A03%3A34Z%2F-1%2F%2Fde135088029d06474e9fa14a7d20d7a4770097e619d30814eb9d01cb12c17daf" alt="Image" width="7%" /></div>
 
 
-下载爱康APP
+下载示例APP
 
-www.ikang.com
+www.example.com
 
 ## 目录
 
@@ -78,7 +78,7 @@ www.ikang.com
 
 ##### 尊敬的受检者先生，您好！
 
-爱康杭州西溪天堂旗舰中心分院感谢您的光临和对我们的信任和支持。现将您2026年07月16日的体检报告呈上。
+示例体检中心分院感谢您的光临和对我们的信任和支持。现将您2026年07月16日的体检报告呈上。
 
 ##### 报告阅读说明书
 
@@ -114,7 +114,7 @@ www.ikang.com
 
 【6】前列腺钙化灶
 
-下载爱康APP
+下载示例APP
 
 查看彩色报告
 
@@ -166,7 +166,7 @@ www.ikang.com
 
 前列腺钙化多是由于以前有过前列腺炎症，愈合后留下钙化斑。如无症状，不必治疗，如果引起排尿困难等症状，需到医院专科就诊。建议定期B超检查。注意劳逸结合，忌长久静坐，平时多饮水，忌酒及辛辣食物。
 
-下载爱康APP
+下载示例APP
 
 查看彩色报告
 
@@ -175,7 +175,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">一般检查室</div> </div>
 
 
-检查者：黎宏艳
+检查者：医生A
 
 
 
@@ -187,7 +187,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">眼科</div> </div>
 
 
-检查者：___、许斌敏
+检查者：___、医生B
 
 
 
@@ -197,7 +197,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">血常规</div> </div>
 
 
-操作者：菅苗 审核者：向晓敏
+操作者：医生C 审核者：医生D
 
 
 
@@ -207,7 +207,7 @@ www.ikang.com
 <div style="text-align: center;"><img src="https://pplines-online.bj.bcebos.com/deploy/official/paddleocr/pp-ocr-vl-16-online//48008be8-cf4b-437a-92da-4fa92edc0af9/markdown_2/imgs/img_in_image_box_1087_1434_1161_1509.jpg?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-09-06T08%3A03%3A36Z%2F-1%2F%2Fb4109ddfad395ed41576e5a35971033c318d77456f9881f8b91ecd9ddf8322e5" alt="Image" width="6%" /></div>
 
 
-下载爱康APP
+下载示例APP
 
 查看彩色报告
 
@@ -221,7 +221,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">尿常规</div> </div>
 
 
-操作者：林继呼 审核者：曹苗
+操作者：医生E 审核者：医生F
 
 
 
@@ -236,7 +236,7 @@ www.ikang.com
 
 ##### 呼气实验室
 
-操作者：杨有
+操作者：医生G
 
 审核者：
 
@@ -250,7 +250,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">实验室检查</div> </div>
 
 
-操作者：李彤 审核者：宋法爱 叶琦 蔡屹
+操作者：医生H 审核者：医生I 医生J 医生K
 
 
 
@@ -269,7 +269,7 @@ www.ikang.com
 
 ##### 心电图室
 
-检查者：陆佩平
+检查者：医生L
 
 
 
@@ -279,7 +279,7 @@ www.ikang.com
 <div style="text-align: center;"><div style="text-align: center;">腹部彩超</div> </div>
 
 
-检查者：飞彩
+检查者：医生M
 
 
 
@@ -335,7 +335,7 @@ www.ikang.com
 
 #### 前列腺彩超
 
-检查者：飞彩
+检查者：医生M
 
 
 
@@ -352,7 +352,7 @@ www.ikang.com
 
 ##### 甲状腺彩超
 
-检查者：飞彩
+检查者：医生M
 
 检查项目
 
@@ -389,23 +389,23 @@ www.ikang.com
 
 ##### CT室
 
-检查者：罗剑飞 审核者：峰
+检查者：医生N 审核者：医生O
 
 
 
 <!-- page 11 -->
 <table border=1 style='margin: auto; word-wrap: break-word;'><tr><td style='text-align: center; word-wrap: break-word;'>检查项目</td><td style='text-align: center; word-wrap: break-word;'>检查所见</td><td style='text-align: center; word-wrap: break-word;'>单位</td></tr><tr><td style='text-align: center; word-wrap: break-word;'>胸部 (CT)</td><td style='text-align: center; word-wrap: break-word;'>胸廓两侧对称，支气管血管束清晰。肺内未见明显活动性病变。疑似气管憩室。主气管、双肺支气管及其分支管腔通畅。心脏及大血管未见异常。双侧肺门及纵隔内未见明显增大淋巴结。两侧胸腔未见明显积液征象。附见：脂肪肝。</td><td style='text-align: center; word-wrap: break-word;'></td></tr><tr><td style='text-align: center; word-wrap: break-word;'>初步意见</td><td colspan="2">1.两肺内未见明显活动性病变\n2.疑似气管憩室\n3.脂肪肝</td></tr></table>
 
-林进喜
+医生P
 
 终审医生：___
 
-iKang爱康
+iKang示例
 
 <div style="text-align: center;"><img src="https://pplines-online.bj.bcebos.com/deploy/official/paddleocr/pp-ocr-vl-16-online//061c60bd-d829-430e-93bd-1840caba3f5d/markdown_1/imgs/img_in_image_box_455_867_577_990.jpg?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-09-06T08%3A03%3A36Z%2F-1%2F%2F9eaee849f53b1529f8bad920146380a2e79a3a50efc4777fbe5e71b5d472c348" alt="Image" width="10%" /></div>
 
 
-下载爱康APP
+下载示例APP
 
 ## 4. 深度咨询或风险评估产品建议
 
@@ -443,7 +443,7 @@ iKang爱康
 
 扫码购买
 
-下载爱康APP
+下载示例APP
 
 查看彩色报告
 
@@ -486,7 +486,7 @@ iKang爱康
 <div style="text-align: center;"><img src="https://pplines-online.bj.bcebos.com/deploy/official/paddleocr/pp-ocr-vl-16-online//ec8848d9-3697-4879-9fca-a365d3f2997b/markdown_0/imgs/img_in_image_box_1088_1435_1161_1509.jpg?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-09-06T08%3A03%3A20Z%2F-1%2F%2F008ec5ed4f9b43418fb4b26cebaae7ee7e088ed3cc6fadf8b173789edb243673" alt="Image" width="6%" /></div>
 
 
-下载爱康APP
+下载示例APP
 
 查看彩色报告
 
@@ -506,5 +506,5 @@ iKang爱康
 
 诊断医生
 
-陆润平
+医生Q
 

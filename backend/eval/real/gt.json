@@ -2,7 +2,7 @@
   "meta": {
     "sex": "male",
     "age": null,
-    "_note": "真实爱康体检报告脱敏标注(评测升级 spec §7.2)。age 文档未含→null(规则层 report 区间优先,不依赖 age)。page 标记:r_real.md 每个 <table> 前插页标记模拟 Paddle 逐页输出。标注口径:code 严格对齐 indicator_list.yaml 24 code;status 按报告参考区间机械判定(report 区间优先);目录外/定性项 code=null→unmapped;每项 note 记判定依据与已知系统行为 miss。校标依据 scripts/dry_run_real.py 实测:解析 77 项/failed_htmls 0,gt 承载 76 个唯一 name(初步意见 同名两行只标一条,见该项 note);name 与 dry-run 输出逐字一致。"
+    "_note": "真实爱康体检报告脱敏标注(评测升级 spec §7.2)。age 文档未含→null(规则层 report 区间优先,不依赖 age)。page 标记:r_real.md 每个 <table> 前插页标记模拟 Paddle 逐页输出。标注口径:code 严格对齐 indicator_list.yaml 24 code;status 按报告参考区间机械判定(report 区间优先);目录外/定性项 code=null→unmapped;每项 note 记判定依据与已知系统行为 miss。校标依据 scripts/dry_run_real.py 实测:解析 77 项/failed_htmls 0,gt 承载 76 个唯一 name(初步意见 同名两行只标一条,见该项 note);name 与 dry-run 输出逐字一致。注:真实 case 归一化 F1 结构性偏低(大量目录外项 code=null,None==None 不计命中),与合成 case 均值合并解读需谨慎;检查日期保留(不构成个人识别,脱敏时未改动)。"
   },
   "items": [
     {"name": "身高", "value_text": "170.5", "value_num": 170.5, "unit": "cm",

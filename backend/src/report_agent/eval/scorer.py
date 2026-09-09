@@ -38,8 +38,8 @@ def _parse_judge(target: str, unit_id: str, data: dict) -> JudgeResult:
         return JudgeResult(
             target=target, unit_id=unit_id,
             score=round(sum(crit.values()) / (5 * len(crit)), 4),
-            criteria=crit, rationale=str(data.get("rationale", "")),
-            issues=[str(x) for x in data.get("issues", [])],
+            criteria=crit, rationale=str(data.get("rationale") or ""),
+            issues=[str(x) for x in (data.get("issues") or [])],
         )
     except (KeyError, TypeError, ValueError) as e:
         return JudgeResult(target=target, unit_id=unit_id, score=None,

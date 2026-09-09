@@ -143,7 +143,14 @@ class QATraceCallback(BaseCallbackHandler):
         self._sink = sink
 
     def _fmt_msg(self, m) -> dict:
-        d = m.dict() if hasattr(m, "dict") else {"content": str(m)}
+        # pydantic v2 用 model_dump()(BaseMessage.dict() 已弃用,会产生告警污染测试输出);
+        # 无 model_dump 的映射对象回退 dict(m),字符串等兜底 content(见 on_llm_start)
+        if hasattr(m, "model_dump"):
+            d = m.model_dump()
+        elif hasattr(m, "keys"):
+            d = dict(m)
+        else:
+            d = {"content": str(m)}
         return {"role": d.get("type") or d.get("role"), "content": d.get("content"),
                 "tool_calls": d.get("tool_calls")}
 

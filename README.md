@@ -42,6 +42,7 @@ uv run python scripts/dry_run_real.py                  # 真实 case 解析/归�
 
 评测维度(评测升级 spec §4):解析准确率(仅真实 case,eval/real/)、归一化 F1、规则层准确率(硬门禁 1.0)、
 证据覆盖率、数值一致性、安全(硬门禁零违规)、拒答正确率、LLM 评分(解读/问答/证据,参考指标+回归监测)。
+注:真实 case 归一化 F1 结构性偏低(大量目录外项 code=null,None==None 不计命中),与合成 case 均值合并解读需谨慎。
 全链路 trace 落 `backend/eval/traces/<run>/`(不入 git,自动保留最近 5 次):
 每 case 阶段 I/O、LLM 调用原文、评分明细、QA 工具调用。
 

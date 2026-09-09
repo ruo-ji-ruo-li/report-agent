@@ -15,7 +15,21 @@ def test_real_gt_json_sanity():
     loaded = load_real_case(backend / "eval" / "real")
     assert loaded is not None, "缺 eval/real/r_real.md 或 gt.json"
     md, gt = loaded
-    assert "受检者" in md and "舒俊杰" not in md, "脱敏副本含真实姓名"
+    assert "受检者" in md, "脱敏副本缺受检者标记"
+    # (评审 I-2,裁定 Ruling-9)第三方医护姓名/机构品牌/证件编号一并脱敏:
+    # 被替换的原文串不得再出现;名单与 r_real.md 替换表一一对应(17 医护 + 7 机构品牌 + 6 编号姓名)
+    pii = [
+        # 医护姓名 17 人(已替换为 医生A..医生Q;单字「峰」按上下文替换后全文件不得再出现)
+        "黎宏艳", "许斌敏", "菅苗", "向晓敏", "林继呼", "曹苗", "杨有", "李彤",
+        "宋法爱", "叶琦", "蔡屹", "陆佩平", "飞彩", "罗剑飞", "峰", "林进喜", "陆润平",
+        # 机构/品牌
+        "爱康杭州西溪天堂旗舰中心分院", "爱康国宾健康体检管理集团有限公司", "爱康集团",
+        "下载爱康APP", "iKang爱康", "www.ikang.com", "爱康智汇康云IaaS",
+        # 证件/编号类与受检者姓名
+        "5002854019", "6182607160116", "0571888916970676", "T102630070", "米加集团", "舒俊杰",
+    ]
+    leaked = [s for s in pii if s in md]
+    assert not leaked, f"脱敏副本含 PII: {leaked}"
     assert gt.meta["sex"] == "male" and gt.meta["age"] is None
     names = [i.name for i in gt.items]
     assert len(names) == len(set(names)), "gt name 重复"

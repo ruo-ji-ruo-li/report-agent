@@ -87,6 +87,10 @@ Notes:
 - **Guardrails** (`guardrails/`): pure-code rules (`rules.py` — diagnosis terms, medication/dose terms, required elements, numeric consistency vs whitelist) → SUSPECT triggers a secondary LLM review (`reviewer.py`) → regenerate once with feedback → else safe degraded template (`enforce.py`). The pipeline's `guardrail` stage is the authoritative source for the stored interpretation doc (deep-copies the generate checkpoint; never mutate it). Chat answers run the same rules in the SSE layer after full assembly. `run_eval.py` must use the same text-assembly function (`item_guardrail_text`) as the guardrail stage or the safety gate misses the risks channel.
 - Everything guardrail-related is logged to the `audit_events` table (`guardrails/audit.py`).
 
+### Eval subsystem
+
+Eval and regression gate live in `src/report_agent/eval/` (`metrics` / `runner` / `scorer` / `tracer` / `real_case`); entry point `scripts/run_eval.py`, real case data in `eval/real/`.
+
 ### Degradation philosophy (spec §11)
 
 External failures degrade layer-by-layer, never crash the request: app starts with unreachable services (warn only); Neo4j down → KG path returns empty, dense+BM25 continue; Milvus down → dense+BM25 skipped; LLM failure → retry with exponential backoff (`llm/client.py`, shared singleton `llm_factory` — never instantiate clients per-module), then degrade to templates. Vision parse failure → task failed (caller retries), PDF text-layer insufficient → vision fallback.

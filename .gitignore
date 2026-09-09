@@ -3,5 +3,5 @@
 .coverage
 /docs/
 /backend/uploads/
-/backend/eval/体检报告_1784518807847.pdf_by_PaddleOCR-VL-1.6.md
+/backend/eval/体检报告_*.md
 /backend/eval/traces/
