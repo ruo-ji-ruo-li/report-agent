@@ -109,6 +109,9 @@ class MilvusStore:
         self._client.insert(self.collection, rows)
         # flush 保证数据持久化并对 search 立即可见(Bounded 一致性下未 flush 的新数据检索不到,
         # 真实 2.5.14 验证确认);增量更新后立即可查是验收标准 5 的必要语义。
+        # TODO(批量 flush, 暂不修复): flush 会阻塞到 channel checkpoint 推进过 flushTs 才返回
+        # (Milvus 3.0 standalone 默认空闲 60s / 有写入 10s 推进一次, 单次实测 10~20s),
+        # 批量导入场景应由调用方合并成末尾一次 flush, 见 scripts/seed_import.py::import_entity。
         self._client.flush(self.collection)
         log.info("milvus_upsert", count=len(rows))
 
@@ -118,12 +121,14 @@ class MilvusStore:
         self._client.delete(
             self.collection, filter=f"entity_type == '{entity_type}' and entity_id == '{entity_id}'"
         )
+        # 同 upsert_chunks: flush 需等 channel checkpoint, 见其 TODO(批量 flush)。
         self._client.flush(self.collection)
 
     def delete_entity_type(self, entity_type: str) -> None:
         """按 entity_type 整类删除(全量重建场景:一条 delete + 一次 flush)。"""
         assert "'" not in entity_type, f"非法 entity_type(含单引号): {entity_type}"
         self._client.delete(self.collection, filter=f"entity_type == '{entity_type}'")
+        # 同 upsert_chunks: flush 需等 channel checkpoint, 见其 TODO(批量 flush)。
         self._client.flush(self.collection)
 
     def search_dense(self, embedding: list[float], top_k: int) -> list[ScoredChunk]:

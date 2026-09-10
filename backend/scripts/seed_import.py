@@ -180,6 +180,12 @@ async def import_entity(session, store, llms, settings, seed) -> None:
     embs = []
     for i in range(0, len(texts), 10):
         embs.extend(await llms.embedding.embed_texts(texts[i:i + 10]))
+    # TODO(批量 flush, 暂不修复): 下面两次调用各触发一次 Milvus flush, 而 flush 要等
+    # channel checkpoint 推进过 flushTs 才返回 —— Milvus 3.0 standalone 默认空闲 60s /
+    # 有写入 10s 才推进一次(容器日志: "GetFlushState failed, channel unflushed" [lag=21.25s]),
+    # 实测单实体白等 10~20s, --all 全量(24 指标)因此多花约 8 分钟。
+    # 正解: MilvusStore 写方法加 flush 开关, --all 路径批量写完后末尾统一 flush 一次;
+    # --entity 增量路径保留即时 flush(验收标准 5: 增量更新后立即可查)。
     await asyncio.to_thread(store.delete_entity, "indicator", seed.code)
     await asyncio.to_thread(store.upsert_chunks, chunks, embs)
     print(f"[done] indicator {seed.code}: {len(chunks)} chunks")
