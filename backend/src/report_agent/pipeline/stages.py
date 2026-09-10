@@ -119,7 +119,7 @@ async def compare_stage(ctx: StageContext) -> dict:
 async def retrieve_stage(ctx: StageContext) -> dict:
     """逐异常项并发检索(信号量限流)。单项失败/无命中 → 该项占位证据(spec §11)。"""
     from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
-    from report_agent.retrieval.hybrid import RetrievalQuery
+    from report_agent.retrieval.hybrid import build_item_query
 
     audit = None
     factory = getattr(ctx.deps, "session_factory", None)
@@ -142,10 +142,8 @@ async def retrieve_stage(ctx: StageContext) -> dict:
 
     async def one(j: ItemJudgment) -> tuple[str, list[dict]]:
         async with sem:
-            q = RetrievalQuery(
-                text=f"{j.name} {j.status.value} 健康风险", indicator_code=j.indicator_code,
-                direction="high" if j.status.value.endswith("high") else "low",
-            )
+            # 检索 query 口径唯一来源(与评测 runner 共用,见 build_item_query)
+            q = build_item_query(j.name, j.status.value, j.indicator_code)
             evs = await ctx.deps.retriever.search(q)
             key = j.indicator_code or j.name
             if not evs:

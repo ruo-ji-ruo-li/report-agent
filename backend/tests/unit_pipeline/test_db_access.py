@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from report_agent.db import models
 from report_agent.parsing.schemas import NormalizedItem, RawReportItem, ReportMeta
 from report_agent.pipeline.db_access import DataAccess
+from report_agent.pipeline.rule_compare import ItemJudgment, ItemStatus
 from report_agent.pipeline.tasks import TaskService
 
 
@@ -215,3 +216,39 @@ async def test_get_report_detail_section_from_mapping(store):
     detail = await da.get_report_detail(rid)
     assert detail["items"][0]["name"] == "空腹血糖"
     assert detail["items"][0]["section"] == "糖代谢"  # 查映射表
+
+
+def _judgment(it: NormalizedItem, status: ItemStatus, low: float, high: float) -> ItemJudgment:
+    return ItemJudgment(indicator_code=it.indicator_code, name=it.name, value_num=it.value_num,
+                        value_text=it.value_text, unit=it.unit, status=status,
+                        ref_low=low, ref_high=high, critical=False, range_source="report")
+
+
+async def test_apply_judgments_writes_when_aligned(store):
+    """读取→判定→回写(判定由 get_normalized 结果构造)→ 逐行写对,状态/区间不错配。"""
+    da, _ = store
+    rid = await _mk_report(da)
+    await da.save_normalized(rid, [_norm("空腹血糖", "GLU"), _norm("白细胞", "WBC")])
+    stored = await da.get_normalized(rid)
+    statuses = {"空腹血糖": ItemStatus.HIGH, "白细胞": ItemStatus.LOW}
+    await da.apply_judgments(
+        rid, [_judgment(it, statuses[it.name], 3.9, 6.1) for it in stored])
+    by_name = {n["item_name"]: n for n in (await da.get_report_detail(rid))["normalized"]}
+    assert by_name["空腹血糖"]["status"] == "high"
+    assert by_name["白细胞"]["status"] == "low"
+    assert by_name["白细胞"]["ref_low"] == 3.9 and by_name["白细胞"]["ref_high"] == 6.1
+
+
+async def test_apply_judgments_raises_on_misaligned_rows(store):
+    """(修复:QA 夹具错配)行按 id(uuid4)排序,与落库/传入顺序无关 —— judgments 与
+    get_normalized 不同序时必须抛错,而不是把状态/参考区间写到别的项目上。"""
+    da, _ = store
+    rid = await _mk_report(da)
+    await da.save_normalized(rid, [_norm("空腹血糖", "GLU"), _norm("白细胞", "WBC")])
+    stored = await da.get_normalized(rid)
+    misaligned = [_judgment(it, ItemStatus.HIGH, 3.9, 6.1) for it in reversed(stored)]
+    with pytest.raises(ValueError, match="错位"):
+        await da.apply_judgments(rid, misaligned)
+    # 抛错发生在 commit 前 → 不留半截脏数据
+    by_name = {n["item_name"]: n for n in (await da.get_report_detail(rid))["normalized"]}
+    assert all(n["status"] is None for n in by_name.values())

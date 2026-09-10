@@ -3,7 +3,13 @@ import asyncio
 from report_agent.config import Settings
 from report_agent.knowledge.kg_client import ConditionFact, IndicatorContext, InterventionFact
 from report_agent.knowledge.milvus_client import KnowledgeChunk, ScoredChunk
-from report_agent.retrieval.hybrid import Evidence, HybridRetriever, RetrievalQuery, rrf_merge
+from report_agent.retrieval.hybrid import (
+    Evidence,
+    HybridRetriever,
+    RetrievalQuery,
+    build_item_query,
+    rrf_merge,
+)
 
 
 def _ev(text: str, source: str, eid: str | None = None) -> Evidence:
@@ -127,3 +133,20 @@ def test_search_kg_keeps_distinct_facts():
     kg_evs = [e for e in evs if e.source == "kg"]
     assert len(kg_evs) >= 2  # 修复前同键坍缩只剩 1 条
     assert len({e.rrf_score for e in kg_evs}) == len(kg_evs)  # 每条事实各自独立计分
+
+
+def test_build_item_query_matches_pipeline_caliber():
+    """口径锚:异常项检索 query 的唯一构造来源(管线 retrieve_stage 与评测 runner 共用)。
+
+    text/direction 逐字锁定 —— test_stages.py::test_retrieve_stage_payload_placeholder_when_no_hits
+    断言同一字面量,两侧任一处漂移即红。
+    """
+    q = build_item_query("空腹血糖", "high", "GLU")
+    assert (q.text, q.direction, q.indicator_code) == ("空腹血糖 high 健康风险", "high", "GLU")
+    assert build_item_query("血钙", "low", "CA").direction == "low"
+    # critical_* 归并到同向(direction 只做 KG 路方向过滤,见 _kg_path)
+    assert build_item_query("血钾", "critical_high", "K").direction == "high"
+    assert build_item_query("血钾", "critical_low", "K").direction == "low"
+    # 目录外项(code=None)透传,文本仍带项名与方向
+    q_unknown = build_item_query("某未知项", "high", None)
+    assert (q_unknown.text, q_unknown.indicator_code) == ("某未知项 high 健康风险", None)

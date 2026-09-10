@@ -198,6 +198,9 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         normalized_pair_codes,
     )
 
+    # (口径对齐:异常项检索 query 唯一构造口径,与 pipeline.retrieve_stage 共用)
+    from report_agent.retrieval.hybrid import build_item_query
+
     real_case = load_real_case(REAL_DIR)
 
     f1s, accs = [], []
@@ -260,16 +263,17 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
             "expected": expected,
         })
         # 3) 证据覆盖率(全量,无 LLM)
-        from report_agent.retrieval.hybrid import RetrievalQuery
-
         ev_stage: dict = {}
         for j in judgments:
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
             evidence_total += 1
-            evs = await deps.retriever.search(RetrievalQuery(
-                text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
-            if any(e.source != "placeholder" for e in evs):
+            evs = await deps.retriever.search(
+                build_item_query(j.name, j.status.value, j.indicator_code))
+            # (清理死条件:原 `e.source != "placeholder"` 恒真 —— placeholder 唯一产生点是
+            #  pipeline.stages.retrieve_stage 的空命中分支,eval 直调 retriever 不产出;
+            #  空列表即未覆盖,与"非占位证据即覆盖"语义等价)
+            if evs:
                 evidence_covered += 1
             ev_stage[j.name] = [{"source": e.source, "title": e.title, "text": e.text}
                                 for e in evs]
@@ -323,9 +327,12 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
             evidence_total += 1
-            evs = await deps.retriever.search(RetrievalQuery(
-                text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
-            if any(e.source != "placeholder" for e in evs):
+            evs = await deps.retriever.search(
+                build_item_query(j.name, j.status.value, j.indicator_code))
+            # (清理死条件:原 `e.source != "placeholder"` 恒真 —— placeholder 唯一产生点是
+            #  pipeline.stages.retrieve_stage 的空命中分支,eval 直调 retriever 不产出;
+            #  空列表即未覆盖,与"非占位证据即覆盖"语义等价)
+            if evs:
                 evidence_covered += 1
             ev_stage[j.name] = [{"source": e.source, "title": e.title, "text": e.text}
                                 for e in evs]
@@ -351,7 +358,6 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
     from report_agent.eval.scorer import judge_evidence, judge_interpretation
     from report_agent.guardrails.rules import GuardrailContext, item_guardrail_text, rule_guardrail
     from report_agent.pipeline.interpret import generate_summary, interpret_item
-    from report_agent.retrieval.hybrid import RetrievalQuery
 
     numeric_ok, numeric_total = 0, 0
     # (评测升级 spec §6.2)包装 chat 客户端:解读/总评的 LLM I/O 落 llm_calls.jsonl,
@@ -376,8 +382,10 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
         for j in judgments:
             if j.status.value not in ("high", "low", "critical_high", "critical_low"):
                 continue
-            evs = await deps.retriever.search(RetrievalQuery(
-                text=f"{j.name} {j.status.value}", indicator_code=j.indicator_code))
+            # (口径对齐:检索 query 与 retrieve_stage 同口径 —— direction 过滤后 KG 路
+            #  不再混入与判定方向相反的证据,证据集与生产一致)
+            evs = await deps.retriever.search(
+                build_item_query(j.name, j.status.value, j.indicator_code))
             # 数值白名单补充知识证据文本数值(与管线 guardrail_stage 同口径,spec §13:
             # 数值可溯源到报告或知识库);扩完再做本项护栏检查
             for e in evs:
@@ -475,12 +483,16 @@ async def run(deps, *, max_llm_reports: int = 5, update_baseline: bool = False) 
                 meta, raws, gt3 = qa_fixture_parts(src)
                 rid = await deps.db.create_report("manual", None, meta)
                 await deps.db.save_raw_items(rid, raws)
+                await deps.db.save_normalized(rid, gt3)
+                # (修复:QA 夹具错配)apply_judgments 按 id(uuid4)排序逐行配对,判定必须按
+                # "回读顺序"构造 —— 直接传 gt3 顺序会让参考区间/判定错配到别的项目
+                # (实测 r01 的 HDL-C 0.8 被配上 GLU 的区间 3.9~6.1 与 high 判定)
+                stored = await deps.db.get_normalized(rid)
                 specs3 = {}
-                for it in gt3:
+                for it in stored:
                     if it.indicator_code and it.indicator_code not in specs3:
                         specs3[it.indicator_code] = deps.kg.range_specs(it.indicator_code)
-                await deps.db.save_normalized(rid, gt3)
-                await deps.db.apply_judgments(rid, judge_all(gt3, specs3, meta))
+                await deps.db.apply_judgments(rid, judge_all(stored, specs3, meta))
                 qa_report_ids[key] = rid
                 qa_report_items[key] = qa_report_items_text(gt3)
             except Exception as e:  # noqa: BLE001 —— 无 postgres 等:该 key QA 记失败,不阻断门禁

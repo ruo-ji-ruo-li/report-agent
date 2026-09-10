@@ -27,6 +27,18 @@ class RetrievalQuery:
     direction: str | None = None       # high / low(过滤疾病提示方向)
 
 
+def build_item_query(name: str, status: str, indicator_code: str | None) -> RetrievalQuery:
+    """异常项检索 query 的唯一构造口径(管线 retrieve_stage 与评测 runner 共用,防两侧漂移)。
+
+    text 带 "健康风险" 后缀;direction 由判定方向定(critical_high/critical_low 归并到
+    high/low)—— 只过滤 KG 路疾病提示方向(_kg_path),dense/BM25 不受影响。
+    """
+    return RetrievalQuery(
+        text=f"{name} {status} 健康风险", indicator_code=indicator_code,
+        direction="high" if status.endswith("high") else "low",
+    )
+
+
 @dataclass
 class Evidence:
     text: str

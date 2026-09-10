@@ -113,6 +113,12 @@ class DataAccess:
             ]
 
     async def apply_judgments(self, report_id: str, judgments: list[ItemJudgment]) -> None:
+        """把判定写回 normalized 行(逐行配对)。
+
+        契约:judgments 必须与 get_normalized 同序 —— 行按 id(uuid4)排序,与落库顺序
+        无关,传别处顺序的 list 会静默错配(参考区间/状态张冠李戴,长度相同不报错)。
+        此处按内容逐行校验,错位立即抛错,不写脏数据。
+        """
         async with self._factory() as s:
             from sqlalchemy import select
 
@@ -120,7 +126,15 @@ class DataAccess:
                 select(NormalizedItemRow).where(NormalizedItemRow.report_id == report_id)
                 .order_by(NormalizedItemRow.id)
             )).scalars().all()
-            for row, j in zip(rows, judgments, strict=True):
+            for i, (row, j) in enumerate(zip(rows, judgments, strict=True)):
+                # judge_item 逐字复制这四个字段(rule_compare.py),故"读取→判定→回写"
+                # 路径必过;真错位时名字几乎必然不同。两行四字段全同 → 区间与判定亦同,交换无害
+                if (row.item_name, row.value_text, row.value_num, row.unit) != \
+                        (j.name, j.value_text, j.value_num, j.unit):
+                    raise ValueError(
+                        f"判定与归一化行错位(第 {i} 行): 行={row.item_name!r} vs "
+                        f"判定={j.name!r};judgments 必须按 get_normalized 的顺序构造"
+                    )
                 row.status = j.status.value
                 row.ref_low, row.ref_high = j.ref_low, j.ref_high
                 row.critical = j.critical
